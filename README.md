@@ -92,7 +92,7 @@ Un seul script Python, sans dépendance externe pour l'usage courant. Seul le st
 <a id="captures"></a>
 ## 📸 Captures d'écran
 
-> Captures réalisées avec des **données fictives**.
+> Captures réalisées avec des **données fictives**. La photo est celle que l'API BMW CarData renvoie pour le véhicule (commande `profile`).
 
 <div align="center">
 
@@ -244,7 +244,7 @@ Ces paramètres s'affichent au démarrage, pour les comparer avec ceux du portai
 
 | Onglet | Contenu |
 |---|---|
-| **Vue d'ensemble** | Photo ou silhouette de la voiture, jauge de carburant, compteur, prochain entretien, vue de dessus (portes, vitres, coffre, capot, toit ouvrant, pneus), carte, fiche technique |
+| **Vue d'ensemble** | Photo officielle de la voiture (commande `profile`), jauge de carburant, compteur, prochain entretien, vue de dessus (portes, vitres, coffre, capot, toit ouvrant, pneus), carte, fiche technique |
 | **Entretien & alertes** | Voyants Check Control, entretien détaillé (huile, liquide de frein…), échéances, batteries, alarme, mémoire des défauts |
 | **Conduite & conso** | Consommation moyenne réelle (compteur officiel OBFCM), habitudes de conduite, cap et altitude, moteur, navigation, programmateurs de clim |
 | **Toutes les données** | La liste complète des valeurs connues, avec une recherche |
