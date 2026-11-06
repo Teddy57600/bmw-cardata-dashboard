@@ -1266,6 +1266,7 @@ function fluxValue(k, e) {
     const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw);
     const a = Math.floor(lo / step) * step, b = Math.ceil(hi / step) * step, out = [];
     for (let v = a; v <= b + step / 2; v += step) out.push(+v.toFixed(10));
+    out.dec = (String(+step.toFixed(10)).split(".")[1] || "").length;  // décimales nécessaires aux graduations
     return out;
   }
   function timeTicks(t0, t1, width) {
@@ -1310,7 +1311,7 @@ function fluxValue(k, e) {
     const y = v => m.t + ih - (v - y0) / (y1 - y0 || 1) * ih;
     yt.forEach(v => {
       el("line", { class: v === y0 ? "base-l" : "grid-l", x1: m.l, x2: W - m.r, y1: Math.round(y(v)) + .5, y2: Math.round(y(v)) + .5 }, svg);
-      el("text", { class: "ax", x: m.l - 8, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = fmt(v, c.dTick ?? (Math.abs(y1 - y0) < 5 && !Number.isInteger(v) ? 1 : 0));
+      el("text", { class: "ax", x: m.l - 8, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = fmt(v, Math.max(c.dTick ?? 0, yt.dec));
     });
     const tt = timeTicks(t0, t1, iw);
     tt.ticks.forEach(t => { el("text", { class: "ax", x: x(t), y: Hh - 6, "text-anchor": "middle" }, svg).textContent = tt.label(t); });

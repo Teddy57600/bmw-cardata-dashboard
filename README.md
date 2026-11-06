@@ -102,6 +102,12 @@ Un seul script Python, sans dépendance externe pour l'usage courant. Seul le st
 
 <br><br>
 
+**Historique**
+
+<img src="docs/captures/historique.png" alt="Onglet Historique : graphiques du carburant, de l'autonomie, des kilomètres par jour, du kilométrage, des pneus et de la batterie 12 V" width="100%">
+
+<br><br>
+
 <table>
 <tr>
 <td align="center" width="50%"><b>Entretien &amp; alertes</b><br><br><img src="docs/captures/entretien.png" alt="Onglet Entretien et alertes"></td>
