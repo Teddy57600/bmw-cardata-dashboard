@@ -46,6 +46,7 @@
 - [🕹️ Utilisation](#utilisation)
 - [📡 Streaming en direct](#streaming)
 - [🖥️ Le tableau de bord](#tableau-de-bord)
+  - [La base de l'historique (SQLite)](#base-historique)
 - [📊 Données récupérées](#donnees)
 - [🔒 Confidentialité](#confidentialite)
 - [⚠️ Limites à connaître](#limites)
@@ -70,6 +71,9 @@ Kilométrage, carburant, autonomie, **consommation réelle**, ouvrants, pneus av
 
 ### 📡 Streaming MQTT en direct
 La voiture envoie ses données dès qu'elle les transmet. La page se met à jour toute seule, et la connexion se rétablit seule en cas de coupure.
+
+### 🗄️ Historique en base SQLite
+Chaque valeur reçue est rangée dans `historique.db`, que vous pouvez interroger en SQL. [Détails](#base-historique)
 
 </td>
 <td width="50%" valign="top">
@@ -134,6 +138,7 @@ flowchart LR
     B -- "API REST<br/>(~50 appels/jour)" --> S["🐍 bmw_cardata.py"]
     B -- "Streaming MQTT<br/>(en direct)" --> S
     S --> H["🖥️ tableau_de_bord.html"]
+    S --> D["🗄️ historique.db<br/>(SQLite)"]
     S --> L["🌐 http://127.0.0.1:8765<br/>page en direct"]
 ```
 
@@ -243,7 +248,7 @@ Ces paramètres s'affichent au démarrage, pour les comparer avec ceux du portai
 | 🔴 | Connexion coupée (reconnexion en cours) ou script arrêté |
 
 > [!TIP]
-> Pour provoquer un envoi de données, verrouillez ou déverrouillez la voiture depuis l'appli My BMW. Chaque message reçu est aussi enregistré dans `historique_stream.jsonl`.
+> Pour provoquer un envoi de données, verrouillez ou déverrouillez la voiture depuis l'appli My BMW. Chaque message reçu est aussi enregistré tel quel dans `historique_stream.jsonl`, et ses valeurs dans la base [`historique.db`](#base-historique).
 
 <br>
 
@@ -260,6 +265,40 @@ Ces paramètres s'affichent au démarrage, pour les comparer avec ceux du portai
 | **Flux en direct** | Chaque message MQTT reçu, regroupé par rafale, avec filtre, pause et repérage des données « hors tableau » |
 
 Une valeur transmise il y a plus de **7 jours** est signalée comme ancienne donnée.
+
+<a id="base-historique"></a>
+### 🗄️ La base de l'historique (SQLite)
+
+Chaque valeur reçue, par `stream` ou par `status`, est enregistrée dans **`historique.db`**, une base SQLite créée à côté du script. Elle alimente l'onglet Historique : la page ne relit que les données des graphiques, au lieu de tout l'historique à chaque message. Python intègre SQLite, il n'y a donc rien à installer.
+
+La base est créée au premier lancement. Elle reprend alors automatiquement l'historique déjà présent (`historique_stream.jsonl`, `historique_lectures.jsonl` et `derniere_lecture.json`). Si vous la supprimez, elle est reconstruite de la même façon.
+
+Une seule table, `mesures`, avec une ligne par valeur. Une valeur déjà connue (même donnée, même date) n'est pas enregistrée deux fois.
+
+| Colonne | Contenu |
+|---|---|
+| `cle` | Clé technique BMW, par exemple `vehicle.vehicle.travelledDistance` |
+| `horodatage` | Date de la valeur, donnée par la voiture (ISO 8601, UTC) |
+| `t` | La même date en secondes Unix, pratique pour trier et filtrer |
+| `valeur` | Nombre si possible, sinon texte |
+| `unite` | Unité envoyée par BMW (`km`, `kPa`, `percent`…) |
+| `source` | `stream`, `api` (commande `status`) ou `derniere_lecture` (import initial) |
+| `recu` | Date de réception sur le PC |
+
+Pour l'explorer, utilisez par exemple [DB Browser for SQLite](https://sqlitebrowser.org/) ou ces requêtes :
+
+```sql
+-- Kilométrage relevé chaque jour
+SELECT date(t, 'unixepoch', 'localtime') AS jour, max(valeur) AS km
+FROM mesures WHERE cle = 'vehicle.vehicle.travelledDistance'
+GROUP BY jour ORDER BY jour;
+
+-- Dernière valeur connue de chaque donnée
+SELECT cle, valeur, unite, datetime(max(t), 'unixepoch', 'localtime') AS le
+FROM mesures GROUP BY cle ORDER BY cle;
+```
+
+`historique_stream.jsonl` reste le journal brut des messages : il sert à l'onglet Flux en direct et à reconstruire la base si besoin.
 
 <br>
 
@@ -301,8 +340,9 @@ Les fichiers personnels sont exclus du dépôt par le [`.gitignore`](.gitignore)
 | `tokens.json` | Jetons de connexion BMW (**à ne jamais partager**) |
 | `config.json` | Client ID, VIN, identifiant du conteneur |
 | `derniere_lecture.json` | Dernières données connues, dont la position GPS |
-| `historique_stream.jsonl` | Historique des messages reçus en direct |
-| `historique_lectures.jsonl` | Valeurs suivies relevées à chaque `status` (pour les graphiques) |
+| `historique.db` | Base SQLite de toutes les valeurs reçues, dont les positions GPS successives |
+| `historique_stream.jsonl` | Journal brut des messages reçus en direct |
+| `historique_lectures.jsonl` | Ancien journal des lectures `status`, repris dans la base s'il existe |
 | `profil_vehicule.json`, `voiture.png` | Fiche et photo du véhicule |
 | `tableau_de_bord.html` | Page générée (contient le VIN et la position) |
 

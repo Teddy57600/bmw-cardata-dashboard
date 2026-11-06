@@ -33,6 +33,9 @@ def build_page():
     b.PROFILE_FILE = OUT / "profil.json"
     b.STREAM_LOG = OUT / "historique.jsonl"
     b.API_LOG = OUT / "lectures.jsonl"
+    b.LAST_FILE = OUT / "derniere_lecture.json"
+    b.HISTORY_DB = OUT / "historique.db"
+    b.HISTORY_DB.unlink(missing_ok=True)  # recréée à partir des journaux fictifs ci-dessous
     b.PROFILE_FILE.write_text(json.dumps({
         "brand": "BMW", "modelName": "120d", "series": "1", "seriesDevt": "F70", "bodyType": "Sports Hatch",
         "numberOfDoors": 5, "driveTrain": "MHEV", "propulsionType": "DI", "engine": "B47L",

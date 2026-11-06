@@ -22,6 +22,7 @@ import base64
 import hashlib
 import json
 import secrets
+import sqlite3
 import sys
 import threading
 import time
@@ -30,6 +31,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 from collections import deque
+from contextlib import closing
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -58,7 +60,8 @@ STREAM_LOG = HERE / "historique_stream.jsonl"  # chaque message reçu en direct
 CATALOGUE_FILE = HERE / "catalogue_bmw.json"   # noms officiels (en français) de toutes les données BMW
 CATALOGUE_URL = "https://www.bmw.fr/fr-fr/utilities/bmw/api/cd/catalogue?streamable=false&q=&category=&offset="
 STREAM_LOG_IN_PAGE = 800                       # nombre de messages repris dans la page
-API_LOG = HERE / "historique_lectures.jsonl"   # valeurs suivies, à chaque lecture « status »
+HISTORY_DB = HERE / "historique.db"            # base SQLite : toutes les valeurs datées (streaming + status)
+API_LOG = HERE / "historique_lectures.jsonl"   # ancien journal des lectures « status », importé dans la base
 HISTORY_MAX_POINTS = 1500                      # points gardés par courbe dans la page
 
 # Données suivies dans le temps (onglet « Historique »)
@@ -513,7 +516,7 @@ def parse_time(ts):
         return None
     try:
         return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone()
-    except ValueError:
+    except (ValueError, AttributeError):
         return None
 
 
@@ -591,45 +594,110 @@ def read_stream_history(limit=STREAM_LOG_IN_PAGE):
     return out
 
 
-def log_api_reading(incoming):
-    """Garde une trace des valeurs suivies lues par « status » (pour les graphiques)."""
-    data = {k: v for k, v in (incoming or {}).items() if k in HISTORY_KEYS and isinstance(v, dict)}
-    if data:
-        with API_LOG.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"received": now_iso(), "source": "api", "data": data}, ensure_ascii=False) + "\n")
+# =============================================================================
+# Historique (base SQLite)
+# =============================================================================
+DB_SCHEMA = """
+CREATE TABLE IF NOT EXISTS mesures (
+    cle        TEXT NOT NULL,  -- clé technique BMW (ex. vehicle.vehicle.travelledDistance)
+    horodatage TEXT NOT NULL,  -- date de la valeur donnée par la voiture (ISO 8601)
+    t          REAL NOT NULL,  -- la même date en secondes Unix (tri et filtres)
+    valeur,                    -- nombre si possible, sinon texte
+    unite      TEXT,
+    source     TEXT,           -- stream, api ou derniere_lecture
+    recu       TEXT,           -- date de réception sur le PC
+    PRIMARY KEY (cle, horodatage)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS mesures_cle_t ON mesures (cle, t);
+"""
+
+
+def _db_value(v):
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, (int, float)):
+        return v
+    if isinstance(v, str):
+        try:
+            return float(v) if v.strip() else v
+        except ValueError:
+            return v
+    return None if v is None else json.dumps(v, ensure_ascii=False)
+
+
+def _db_record(db, data, source, received=None):
+    rows = []
+    for k, e in (data or {}).items():
+        if not isinstance(e, dict):
+            continue
+        dt = parse_time(e.get("timestamp"))
+        if dt:
+            rows.append((k, e["timestamp"], dt.timestamp(), _db_value(e.get("value")), e.get("unit"),
+                         source, received))
+    db.executemany("INSERT OR IGNORE INTO mesures VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+
+
+def open_db():
+    """Ouvre la base de l'historique. À la première ouverture, elle est créée puis remplie
+    avec les anciens journaux (.jsonl) et les dernières valeurs connues."""
+    db = sqlite3.connect(HISTORY_DB, timeout=10)
+    db.executescript(DB_SCHEMA)
+    if db.execute("PRAGMA user_version").fetchone()[0] == 0:
+        with db:
+            for path, source in ((STREAM_LOG, "stream"), (API_LOG, "api")):
+                if not path.exists():
+                    continue
+                with path.open(encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        try:
+                            entry = json.loads(line)
+                            _db_record(db, entry.get("data"), entry.get("source", source), entry.get("received"))
+                        except (json.JSONDecodeError, AttributeError):
+                            pass
+            last = load_json(LAST_FILE, {}) or {}
+            _db_record(db, last.get("telematicData"), "derniere_lecture", last.get("fetched_iso"))
+            db.execute("PRAGMA user_version = 1")
+    return db
+
+
+def save_history(data, source, received=None):
+    """Ajoute des valeurs reçues à la base (une valeur déjà connue n'est pas dupliquée)."""
+    try:
+        with closing(open_db()) as db, db:
+            _db_record(db, data, source, received or now_iso())
+    except sqlite3.Error as e:
+        print(f"Base {HISTORY_DB.name} : écriture impossible ({e}).")
 
 
 def build_history(telematic):
-    """Séries temporelles {clé: [[horodatage ISO, valeur], ...]} à partir du streaming,
-    des lectures « status » et des dernières valeurs connues. Une valeur est datée par la
-    voiture (timestamp), pas par sa réception ; les doublons sont fusionnés."""
+    """Séries temporelles {clé: [[horodatage ISO, valeur], ...]} lues dans la base, complétées
+    par les dernières valeurs connues. Une valeur est datée par la voiture (timestamp), pas par
+    sa réception."""
     points = {k: {} for k in HISTORY_KEYS}
 
-    def add(data):
-        for k, e in (data or {}).items():
-            if k not in points or not isinstance(e, dict) or not e.get("timestamp"):
-                continue
-            try:
-                points[k][e["timestamp"]] = float(e.get("value"))
-            except (TypeError, ValueError):
-                pass
+    def add(k, ts, t, v):
+        try:
+            points[k][ts] = (t, float(v))
+        except (TypeError, ValueError):
+            pass
 
-    for path in (STREAM_LOG, API_LOG):
-        if not path.exists():
-            continue
-        with path.open(encoding="utf-8", errors="replace") as f:
-            for line in f:
-                try:
-                    add(json.loads(line).get("data"))
-                except (json.JSONDecodeError, AttributeError):
-                    pass
-    add(telematic)
+    try:
+        with closing(open_db()) as db:
+            marks = ",".join("?" * len(HISTORY_KEYS))
+            for k, ts, t, v in db.execute(
+                    f"SELECT cle, horodatage, t, valeur FROM mesures WHERE cle IN ({marks})", HISTORY_KEYS):
+                add(k, ts, t, v)
+    except sqlite3.Error as e:
+        print(f"Base {HISTORY_DB.name} : lecture impossible ({e}).")
+    for k, e in (telematic or {}).items():
+        dt = parse_time(e.get("timestamp")) if k in points and isinstance(e, dict) else None
+        if dt:
+            add(k, e["timestamp"], dt.timestamp(), e.get("value"))
 
     out = {}
     for k, by_ts in points.items():
         serie = []
-        for t in sorted(by_ts, key=lambda s: parse_time(s) or datetime.min.replace(tzinfo=timezone.utc)):
-            v = by_ts[t]
+        for t, (_, v) in sorted(by_ts.items(), key=lambda kv: kv[1][0]):
             # valeur inchangée : on ne garde que le premier et le dernier point du palier
             if len(serie) >= 2 and serie[-1][1] == v and serie[-2][1] == v:
                 serie[-1] = [t, v]
@@ -694,7 +762,7 @@ def status():
     q = urllib.parse.urlencode({"containerId": container_id})
     data = api("GET", f"/customers/vehicles/{urllib.parse.quote(vin)}/telematicData?{q}", token)
     incoming = data.get("telematicData", {}) if isinstance(data, dict) else {}
-    log_api_reading(incoming)
+    save_history(incoming, "api")
 
     last = load_last()
     telematic = last.get("telematicData", {}) if last.get("vin") == vin else {}
@@ -905,6 +973,7 @@ def stream():
             entry = {"received": now_iso(), "topic": msg.topic, "data": incoming}
             with STREAM_LOG.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            save_history(incoming, "stream", entry["received"])
             LiveState.seq += 1
             LiveState.log.append(dict(entry, seq=LiveState.seq))
             changed = merge_telematic(telematic, incoming)
