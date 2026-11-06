@@ -1,0 +1,2 @@
+# Seul le streaming en direct (commande « stream ») a besoin d'une bibliothèque externe.
+paho-mqtt>=2.0

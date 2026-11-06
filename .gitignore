@@ -1,0 +1,20 @@
+# --- Données personnelles : ne JAMAIS publier ---
+# jetons de connexion BMW
+tokens.json
+# Client ID, VIN, identifiant du conteneur
+config.json
+# état du véhicule et position GPS
+derniere_lecture.json
+historique_stream.jsonl
+# fiche et photo officielle du véhicule
+profil_vehicule.json
+voiture.png
+voiture.jpg
+# page générée (contient VIN et position)
+tableau_de_bord.html
+
+# --- Fichiers temporaires ---
+*.tmp
+__pycache__/
+*.pyc
+.claude/
