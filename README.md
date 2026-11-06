@@ -75,7 +75,7 @@ La voiture envoie ses données dès qu'elle les transmet. La page se met à jour
 <td width="50%" valign="top">
 
 ### 🖥️ Tableau de bord élégant
-Thème sombre, jauge animée, compteur à rouleaux, vue de dessus de la voiture, carte, cinq onglets. Fonctionne aussi sur téléphone.
+Thème sombre, jauge animée, compteur à rouleaux, vue de dessus de la voiture, carte, graphiques d'historique, six onglets. Fonctionne aussi sur téléphone.
 
 ### 🔎 Flux brut consultable
 Un onglet affiche **chaque message MQTT reçu**, avec les noms officiels BMW en français, même pour les données que le tableau de bord n'affiche pas.
@@ -247,6 +247,7 @@ Ces paramètres s'affichent au démarrage, pour les comparer avec ceux du portai
 | **Vue d'ensemble** | Photo officielle de la voiture (commande `profile`), jauge de carburant, compteur, prochain entretien, vue de dessus (portes, vitres, coffre, capot, toit ouvrant, pneus), carte, fiche technique |
 | **Entretien & alertes** | Voyants Check Control, entretien détaillé (huile, liquide de frein…), échéances, batteries, alarme, mémoire des défauts |
 | **Conduite & conso** | Consommation moyenne réelle (compteur officiel OBFCM), habitudes de conduite, cap et altitude, moteur, navigation, programmateurs de clim |
+| **Historique** | Graphiques sur 7, 30 ou 90 jours : carburant, autonomie, kilomètres par jour, kilométrage, pression des pneus, batterie 12 V. Valeurs au survol, et tableau des valeurs sous chaque graphique |
 | **Toutes les données** | La liste complète des valeurs connues, avec une recherche |
 | **Flux en direct** | Chaque message MQTT reçu, regroupé par rafale, avec filtre, pause et repérage des données « hors tableau » |
 
@@ -293,6 +294,7 @@ Les fichiers personnels sont exclus du dépôt par le [`.gitignore`](.gitignore)
 | `config.json` | Client ID, VIN, identifiant du conteneur |
 | `derniere_lecture.json` | Dernières données connues, dont la position GPS |
 | `historique_stream.jsonl` | Historique des messages reçus en direct |
+| `historique_lectures.jsonl` | Valeurs suivies relevées à chaque `status` (pour les graphiques) |
 | `profil_vehicule.json`, `voiture.png` | Fiche et photo du véhicule |
 | `tableau_de_bord.html` | Page générée (contient le VIN et la position) |
 

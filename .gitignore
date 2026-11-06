@@ -6,6 +6,7 @@ config.json
 # état du véhicule et position GPS
 derniere_lecture.json
 historique_stream.jsonl
+historique_lectures.jsonl
 # fiche et photo officielle du véhicule
 profil_vehicule.json
 voiture.png

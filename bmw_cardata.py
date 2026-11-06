@@ -58,6 +58,21 @@ STREAM_LOG = HERE / "historique_stream.jsonl"  # chaque message reçu en direct
 CATALOGUE_FILE = HERE / "catalogue_bmw.json"   # noms officiels (en français) de toutes les données BMW
 CATALOGUE_URL = "https://www.bmw.fr/fr-fr/utilities/bmw/api/cd/catalogue?streamable=false&q=&category=&offset="
 STREAM_LOG_IN_PAGE = 800                       # nombre de messages repris dans la page
+API_LOG = HERE / "historique_lectures.jsonl"   # valeurs suivies, à chaque lecture « status »
+HISTORY_MAX_POINTS = 1500                      # points gardés par courbe dans la page
+
+# Données suivies dans le temps (onglet « Historique »)
+HISTORY_KEYS = [
+    "vehicle.drivetrain.fuelSystem.level",
+    "vehicle.drivetrain.lastRemainingRange",
+    "vehicle.vehicle.travelledDistance",
+    "vehicle.chassis.axle.row1.wheel.left.tire.pressure",
+    "vehicle.chassis.axle.row1.wheel.right.tire.pressure",
+    "vehicle.chassis.axle.row2.wheel.left.tire.pressure",
+    "vehicle.chassis.axle.row2.wheel.right.tire.pressure",
+    "vehicle.electricalSystem.battery.voltage",
+    "vehicle.electricalSystem.battery.stateOfCharge",
+]
 
 CONTAINER_NAME = "pc-tableau-de-bord"
 
@@ -576,6 +591,58 @@ def read_stream_history(limit=STREAM_LOG_IN_PAGE):
     return out
 
 
+def log_api_reading(incoming):
+    """Garde une trace des valeurs suivies lues par « status » (pour les graphiques)."""
+    data = {k: v for k, v in (incoming or {}).items() if k in HISTORY_KEYS and isinstance(v, dict)}
+    if data:
+        with API_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"received": now_iso(), "source": "api", "data": data}, ensure_ascii=False) + "\n")
+
+
+def build_history(telematic):
+    """Séries temporelles {clé: [[horodatage ISO, valeur], ...]} à partir du streaming,
+    des lectures « status » et des dernières valeurs connues. Une valeur est datée par la
+    voiture (timestamp), pas par sa réception ; les doublons sont fusionnés."""
+    points = {k: {} for k in HISTORY_KEYS}
+
+    def add(data):
+        for k, e in (data or {}).items():
+            if k not in points or not isinstance(e, dict) or not e.get("timestamp"):
+                continue
+            try:
+                points[k][e["timestamp"]] = float(e.get("value"))
+            except (TypeError, ValueError):
+                pass
+
+    for path in (STREAM_LOG, API_LOG):
+        if not path.exists():
+            continue
+        with path.open(encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    add(json.loads(line).get("data"))
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+    add(telematic)
+
+    out = {}
+    for k, by_ts in points.items():
+        serie = []
+        for t in sorted(by_ts, key=lambda s: parse_time(s) or datetime.min.replace(tzinfo=timezone.utc)):
+            v = by_ts[t]
+            # valeur inchangée : on ne garde que le premier et le dernier point du palier
+            if len(serie) >= 2 and serie[-1][1] == v and serie[-2][1] == v:
+                serie[-1] = [t, v]
+            else:
+                serie.append([t, v])
+        if len(serie) > HISTORY_MAX_POINTS:
+            step = len(serie) / HISTORY_MAX_POINTS
+            serie = [serie[int(i * step)] for i in range(HISTORY_MAX_POINTS - 1)] + [serie[-1]]
+        if serie:
+            out[k] = serie
+    return out
+
+
 # =============================================================================
 # Tableau de bord (HTML)
 # =============================================================================
@@ -593,6 +660,7 @@ def render_dashboard(vin, telematic, fetched_at, fetched_iso=None, live=False, p
         "labels": LABELS,
         "catalogue": {k: v.get("name") for k, v in (load_json(CATALOGUE_FILE, {}) or {}).items()},
         "streamLog": list(LiveState.log)[-STREAM_LOG_IN_PAGE:] if live else read_stream_history(),
+        "history": build_history(telematic),
         "live": live,
     }
     blob = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
@@ -626,6 +694,7 @@ def status():
     q = urllib.parse.urlencode({"containerId": container_id})
     data = api("GET", f"/customers/vehicles/{urllib.parse.quote(vin)}/telematicData?{q}", token)
     incoming = data.get("telematicData", {}) if isinstance(data, dict) else {}
+    log_api_reading(incoming)
 
     last = load_last()
     telematic = last.get("telematicData", {}) if last.get("vin") == vin else {}

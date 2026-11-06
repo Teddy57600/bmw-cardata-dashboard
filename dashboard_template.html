@@ -272,6 +272,40 @@ details[open] summary { margin-bottom: 4px; }
 .msg-r[hidden], .msg[hidden] { display: none; }
 @media (max-width: 700px) { .msg-r { grid-template-columns: 1fr auto; } .msg-r .k { grid-column: 1 / -1; } .flux-stats b { font-size: 22px; } }
 
+/* historique */
+.histo-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 11px; border: 1px solid var(--panel-line); background: rgba(255,255,255,.03); }
+.seg button { font: 500 13px var(--body); color: var(--muted); background: none; border: 0; padding: 7px 12px; border-radius: 8px; cursor: pointer; }
+.seg button:hover { color: var(--text); }
+.seg button.on { color: var(--text); background: rgba(61,139,255,.16); box-shadow: inset 0 0 0 1px rgba(61,139,255,.35); }
+.chart-card .now { font: 700 34px/1 var(--display); margin: -4px 0 4px; }
+.chart-card .now small { font-size: 15px; color: var(--muted); font-weight: 500; margin-left: 4px; }
+.chart-card .sub { color: var(--muted); font-size: 12px; min-height: 18px; }
+.chart { position: relative; margin-top: 10px; height: 210px; touch-action: pan-y; }
+.chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.chart .grid-l { stroke: rgba(255,255,255,.07); stroke-width: 1; shape-rendering: crispEdges; }
+.chart .base-l { stroke: rgba(255,255,255,.16); stroke-width: 1; shape-rendering: crispEdges; }
+.chart .ax { fill: var(--muted); font: 11px var(--body); font-variant-numeric: tabular-nums; }
+.chart .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .cross { stroke: rgba(255,255,255,.3); stroke-width: 1; shape-rendering: crispEdges; }
+.chart .col { transition: opacity .15s; }
+.chart .col.dim { opacity: .45; }
+.chart .msg-empty { fill: var(--faint); font: 13px var(--body); }
+.tip { position: absolute; z-index: 5; pointer-events: none; min-width: 120px; padding: 8px 10px; border-radius: 10px; font-size: 12px;
+  background: rgba(13,17,23,.96); border: 1px solid var(--panel-line); box-shadow: 0 10px 30px -10px rgba(0,0,0,.8); white-space: nowrap; }
+.tip .t { color: var(--muted); margin-bottom: 4px; }
+.tip div + div { margin-top: 2px; }
+.tip i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 7px; vertical-align: 3px; }
+.tip b { font-weight: 600; margin-left: 8px; float: right; }
+.c-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+.c-legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 7px; vertical-align: 3px; }
+.chart-card details { margin-top: 8px; }
+.chart-card table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.chart-card th, .chart-card td { text-align: right; padding: 5px 6px; border-bottom: 1px solid var(--panel-line); }
+.chart-card th:first-child, .chart-card td:first-child { text-align: left; }
+.chart-card th { color: var(--muted); font-weight: 500; }
+.chart-card .tbl { max-height: 220px; overflow: auto; }
+
 footer { color: var(--faint); font-size: 12px; text-align: center; padding: 34px 0 40px; }
 
 /* apparition */
@@ -319,6 +353,7 @@ footer { color: var(--faint); font-size: 12px; text-align: center; padding: 34px
     <a href="#apercu" data-p="apercu">Vue d'ensemble</a>
     <a href="#entretien" data-p="entretien">Entretien &amp; alertes <span class="badge" id="alertBadge" hidden></span></a>
     <a href="#conduite" data-p="conduite">Conduite &amp; conso</a>
+    <a href="#historique" data-p="historique">Historique</a>
     <a href="#donnees" data-p="donnees">Toutes les données</a>
     <a href="#flux" data-p="flux"><span class="live-dot" id="fluxDot"></span>Flux en direct <span class="badge" id="fluxBadge" hidden></span></a>
   </nav>
@@ -426,6 +461,24 @@ footer { color: var(--faint); font-size: 12px; text-align: center; padding: 34px
       <article class="card"><h2>Navigation</h2><div id="navList"></div></article>
       <article class="card"><h2>Climatisation</h2><div id="climList"></div></article>
     </div>
+  </section>
+
+  <section class="panel" id="p-historique">
+    <div class="grid"><article class="card">
+      <div class="histo-head">
+        <div>
+          <h2 style="margin-bottom:6px">Historique</h2>
+          <div class="hint" id="histoHint" style="margin:0"></div>
+        </div>
+        <div class="seg" id="histoRange" role="group" aria-label="Période affichée">
+          <button type="button" data-d="7">7 jours</button>
+          <button type="button" data-d="30">30 jours</button>
+          <button type="button" data-d="90">90 jours</button>
+          <button type="button" data-d="0">Tout</button>
+        </div>
+      </div>
+    </article></div>
+    <div class="grid g-2" id="histoGrid"></div>
   </section>
 
   <section class="panel" id="p-donnees">
@@ -1161,9 +1214,248 @@ function fluxValue(k, e) {
   poll(); setInterval(poll, 3000);
 })();
 
+/* ================= historique (graphiques) ================= */
+(() => {
+  const H = DATA.history || {};
+  const NS = "http://www.w3.org/2000/svg";
+  const DAY = 864e5, HOUR = 36e5;
+  const ACCENT = "#3d8bff";
+  const TIRE_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500"];  // palette validée (fond sombre)
+  const series = (k, scale = 1) => (H[k] || []).map(([t, v]) => [new Date(t).getTime(), v * scale]).filter(p => !isNaN(p[0]));
+  const ODO = series("vehicle.vehicle.travelledDistance");
+
+  // km parcourus par jour, déduits du compteur (valeur max de chaque jour − celle du jour précédent connu)
+  const dailyKm = (() => {
+    const byDay = new Map();
+    ODO.forEach(([t, v]) => { const d = new Date(t); d.setHours(0, 0, 0, 0); const k = d.getTime(); byDay.set(k, Math.max(byDay.get(k) ?? -Infinity, v)); });
+    const days = [...byDay.keys()].sort((a, b) => a - b), out = [];
+    for (let i = 1; i < days.length; i++) out.push([days[i], Math.max(0, byDay.get(days[i]) - byDay.get(days[i - 1]))]);
+    return out;
+  })();
+
+  const CHARTS = [
+    { id: "fuel", title: "Niveau de carburant", unit: "%", d: 0, min: 0, max: 100,
+      lines: [{ n: "Carburant", c: ACCENT, p: series("vehicle.drivetrain.fuelSystem.level") }] },
+    { id: "range", title: "Autonomie", unit: "km", d: 0, min: 0,
+      lines: [{ n: "Autonomie", c: ACCENT, p: series("vehicle.drivetrain.lastRemainingRange") }] },
+    { id: "daykm", title: "Kilomètres par jour", unit: "km", d: 0, min: 0, cols: dailyKm,
+      note: "Déduits du compteur, au jour où la voiture a transmis son kilométrage." },
+    { id: "odo", title: "Kilométrage", unit: "km", d: 0,
+      lines: [{ n: "Compteur", c: ACCENT, p: ODO }] },
+    { id: "tires", title: "Pression des pneus", unit: "bar", d: 1, dTick: 1,
+      lines: [["row1.wheel.left", "Avant gauche"], ["row1.wheel.right", "Avant droit"], ["row2.wheel.left", "Arrière gauche"], ["row2.wheel.right", "Arrière droit"]]
+        .map(([w, n], i) => ({ n, c: TIRE_COLORS[i], p: series(`vehicle.chassis.axle.${w}.tire.pressure`, 0.01) })) },
+    { id: "volt", title: "Batterie 12 V (tension)", unit: "V", d: 1,
+      lines: [{ n: "Tension", c: ACCENT, p: series("vehicle.electricalSystem.battery.voltage") }] },
+    { id: "soc", title: "Batterie 12 V (charge)", unit: "%", d: 0, min: 0, max: 100,
+      lines: [{ n: "Charge", c: ACCENT, p: series("vehicle.electricalSystem.battery.stateOfCharge") }] },
+  ].filter(c => c.cols ? ODO.length : c.lines.some(l => l.p.length));  // on n'affiche que ce que la voiture transmet
+
+  const allTimes = CHARTS.flatMap(c => c.cols ? ODO.map(p => p[0]) : c.lines.flatMap(l => l.p.map(p => p[0])));
+  const firstAll = allTimes.length ? Math.min(...allTimes) : Date.now();
+  const dateFr = t => new Date(t).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  const fullFr = t => new Date(t).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+
+  let days = 30;
+  try { const s = localStorage.getItem("histoDays"); if (s != null && ["0", "7", "30", "90"].includes(s)) days = +s; } catch (e) {}
+
+  function niceTicks(lo, hi, n = 4) {
+    if (lo === hi) { const pad = Math.abs(lo) * 0.05 || 1; lo -= pad; hi += pad; }
+    const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw);
+    const a = Math.floor(lo / step) * step, b = Math.ceil(hi / step) * step, out = [];
+    for (let v = a; v <= b + step / 2; v += step) out.push(+v.toFixed(10));
+    return out;
+  }
+  function timeTicks(t0, t1, width) {
+    const span = t1 - t0, maxN = Math.max(2, Math.floor(width / 80));
+    const steps = [HOUR, 2 * HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 7 * DAY, 14 * DAY, 30 * DAY, 60 * DAY, 91 * DAY];
+    const step = steps.find(s => span / s <= maxN) || steps[steps.length - 1];
+    const d = new Date(t0);
+    if (step >= DAY) d.setHours(0, 0, 0, 0); else d.setMinutes(0, 0, 0);
+    let t = d.getTime(); const out = [];
+    while (t <= t1) { if (t >= t0) out.push(t); t = step >= DAY ? new Date(new Date(t).setDate(new Date(t).getDate() + Math.round(step / DAY))).getTime() : t + step; }
+    return { ticks: out, label: step >= DAY ? dateFr : (x => new Date(x).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })) };
+  }
+  // dernière valeur connue à l'instant t (la voiture n'envoie une valeur que quand elle change)
+  const at = (p, t) => { let r = null; for (const q of p) { if (q[0] <= t) r = q; else break; } return r; };
+
+  function draw(c, card, t0, t1) {
+    const box = card.querySelector(".chart");
+    box.innerHTML = "";
+    const W = box.clientWidth, Hh = box.clientHeight;
+    if (!W) return;
+    const m = { l: 44, r: 12, t: 10, b: 26 };
+    const iw = W - m.l - m.r, ih = Hh - m.t - m.b;
+    const svg = el("svg", { viewBox: `0 0 ${W} ${Hh}`, role: "img", "aria-label": c.title }, box);
+    const x = t => m.l + (t - t0) / (t1 - t0) * iw;
+    if (c.cols && !c.cols.length) {
+      el("text", { class: "msg-empty", x: W / 2, y: Hh / 2, "text-anchor": "middle" }, svg).textContent = "Pas encore assez de relevés";
+      return;
+    }
+
+    // données de la période (plus le point précédent, pour que la courbe entre dans le cadre)
+    const win = p => { const i = p.findIndex(q => q[0] >= t0); if (i < 0) return p.length ? [p[p.length - 1]] : []; return p.slice(Math.max(0, i - 1)).filter(q => q[0] <= t1); };
+    const lines = (c.lines || []).map(l => ({ ...l, w: win(l.p) }));
+    const cols = (c.cols || []).filter(q => q[0] + DAY > t0 && q[0] <= t1);
+    const vals = c.cols ? cols.map(q => q[1]) : lines.flatMap(l => l.w.filter(q => q[0] >= t0 || l.w.length === 1).map(q => q[1]));
+    const enough = c.cols ? cols.length > 0 : lines.some(l => l.w.filter(q => q[0] >= t0).length >= 2 || (l.w.length >= 2));
+
+    // axes
+    let lo = c.min ?? Math.min(...vals), hi = c.max ?? Math.max(...vals);
+    if (!vals.length) { lo = c.min ?? 0; hi = c.max ?? 1; }
+    if (c.min == null && c.max == null && hi - lo < 1e-9) { lo -= 1; hi += 1; }
+    const yt = niceTicks(lo, hi, 4); const y0 = yt[0], y1 = yt[yt.length - 1];
+    const y = v => m.t + ih - (v - y0) / (y1 - y0 || 1) * ih;
+    yt.forEach(v => {
+      el("line", { class: v === y0 ? "base-l" : "grid-l", x1: m.l, x2: W - m.r, y1: Math.round(y(v)) + .5, y2: Math.round(y(v)) + .5 }, svg);
+      el("text", { class: "ax", x: m.l - 8, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = fmt(v, c.dTick ?? (Math.abs(y1 - y0) < 5 && !Number.isInteger(v) ? 1 : 0));
+    });
+    const tt = timeTicks(t0, t1, iw);
+    tt.ticks.forEach(t => { el("text", { class: "ax", x: x(t), y: Hh - 6, "text-anchor": "middle" }, svg).textContent = tt.label(t); });
+
+    if (!enough) {
+      el("text", { class: "msg-empty", x: m.l + iw / 2, y: m.t + ih / 2, "text-anchor": "middle" }, svg).textContent =
+        vals.length ? "Un seul relevé sur cette période" : "Aucun relevé sur cette période";
+      return;
+    }
+
+    const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; box.appendChild(tip);
+    const place = (px, py) => { tip.hidden = false; const tw = tip.offsetWidth, th = tip.offsetHeight;
+      tip.style.left = Math.min(Math.max(0, px + 14 + tw > W ? px - tw - 14 : px + 14), W - tw) + "px"; tip.style.top = Math.max(0, Math.min(py - th / 2, Hh - th)) + "px"; };
+    const val = v => `${fmt(v, c.d)} ${c.unit}`;
+
+    if (c.cols) {
+      const band = iw / ((t1 - t0) / DAY), bw = Math.max(3, Math.min(24, band * .6));
+      const marks = cols.map(([t, v]) => {
+        const cx = x(t + DAY / 2), top = y(v), base = y(y0), r = Math.min(4, bw / 2, (base - top));
+        const d = v <= 0 ? "" : `M${cx - bw / 2},${base}V${top + r}Q${cx - bw / 2},${top} ${cx - bw / 2 + r},${top}H${cx + bw / 2 - r}Q${cx + bw / 2},${top} ${cx + bw / 2},${top + r}V${base}Z`;
+        const g = el("g", {}, svg);
+        if (d) el("path", { class: "col", d, fill: ACCENT }, g);
+        el("rect", { x: cx - Math.max(bw, 16) / 2, y: m.t, width: Math.max(bw, 16), height: ih, fill: "transparent" }, g);  // zone de survol plus large que la barre
+        g.addEventListener("pointerenter", () => {
+          svg.querySelectorAll(".col").forEach(p => p.classList.toggle("dim", !g.contains(p)));
+          tip.innerHTML = `<div class="t">${new Date(t).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</div><div>${val(v)}</div>`;
+          place(cx, Math.max(top, m.t + ih / 2));
+        });
+        return g;
+      });
+      svg.addEventListener("pointerleave", () => { tip.hidden = true; svg.querySelectorAll(".col").forEach(p => p.classList.remove("dim")); });
+      return marks;
+    }
+
+    const clip = "clip-" + c.id;
+    el("rect", { x: m.l, y: m.t - 6, width: iw, height: ih + 12 }, el("clipPath", { id: clip }, el("defs", {}, svg)));
+    const g = el("g", { "clip-path": `url(#${clip})` }, svg);
+    lines.forEach(l => {
+      if (l.w.length >= 2) el("path", { class: "ln", stroke: l.c, d: l.w.map((q, i) => `${i ? "L" : "M"}${x(q[0]).toFixed(1)},${y(q[1]).toFixed(1)}`).join("") }, g);
+      const last = l.w[l.w.length - 1];
+      if (last && last[0] >= t0) el("circle", { cx: x(last[0]), cy: y(last[1]), r: 4, fill: l.c, stroke: "#12161c", "stroke-width": 2 }, g);
+    });
+
+    // survol : ligne verticale + valeurs connues à cet instant
+    const cross = el("line", { class: "cross", y1: m.t, y2: m.t + ih, visibility: "hidden" }, svg);
+    const dots = lines.map(l => el("circle", { r: 4, fill: l.c, stroke: "#12161c", "stroke-width": 2, visibility: "hidden" }, svg));
+    const times = [...new Set(lines.flatMap(l => l.w.map(q => q[0])))].filter(t => t >= t0 && t <= t1).sort((a, b) => a - b);
+    const move = ev => {
+      const r = svg.getBoundingClientRect(), px = ev.clientX - r.left;
+      if (!times.length) return;
+      const tx = t0 + (px - m.l) / iw * (t1 - t0);
+      const t = times.reduce((a, b) => Math.abs(b - tx) < Math.abs(a - tx) ? b : a);
+      const cx = x(t);
+      cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
+      let rows = "", ys = [];
+      lines.forEach((l, i) => {
+        const q = at(l.w, t);
+        if (!q) { dots[i].setAttribute("visibility", "hidden"); return; }
+        dots[i].setAttribute("cx", cx); dots[i].setAttribute("cy", y(q[1])); dots[i].setAttribute("visibility", "visible"); ys.push(y(q[1]));
+        rows += `<div>${lines.length > 1 ? `<i style="background:${l.c}"></i>${esc(l.n)}` : ""}<b>${val(q[1])}</b></div>`;
+      });
+      tip.innerHTML = `<div class="t">${fullFr(t)}</div>${rows}`;
+      place(cx, ys.length ? Math.min(...ys) : m.t);
+    };
+    svg.addEventListener("pointermove", move);
+    svg.addEventListener("pointerdown", move);
+    svg.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); dots.forEach(d => d.setAttribute("visibility", "hidden")); });
+  }
+
+  function table(c, t0, t1) {
+    if (c.cols) {
+      const rows = c.cols.filter(q => q[0] + DAY > t0 && q[0] <= t1).reverse();
+      return `<table><thead><tr><th>Jour</th><th>km</th></tr></thead><tbody>${rows.map(([t, v]) => `<tr><td>${new Date(t).toLocaleDateString("fr-FR")}</td><td>${fmt(v)}</td></tr>`).join("")}</tbody></table>`;
+    }
+    const times = [...new Set(c.lines.flatMap(l => l.p.map(q => q[0])))].filter(t => t >= t0 && t <= t1).sort((a, b) => b - a).slice(0, 200);
+    const head = c.lines.map(l => `<th>${esc(l.n)} (${c.unit})</th>`).join("");
+    const body = times.map(t => `<tr><td>${fullFr(t)}</td>${c.lines.map(l => { const q = at(l.p, t); return `<td>${q ? fmt(q[1], c.d) : "—"}</td>`; }).join("")}</tr>`).join("");
+    return `<table><thead><tr><th>Date</th>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  function headline(c, t0) {
+    if (c.cols) {
+      if (!c.cols.length) return { now: "—", sub: "il faut des relevés sur au moins deux jours" };
+      const tot = c.cols.filter(q => q[0] + DAY > t0).reduce((s, q) => s + q[1], 0);
+      return { now: `${fmt(tot)}<small>km</small>`, sub: days ? `parcourus sur ${days} jours` : "parcourus depuis le premier relevé" };
+    }
+    if (c.lines.length > 1) {
+      const lasts = c.lines.map(l => l.p[l.p.length - 1]).filter(Boolean);
+      const lo = Math.min(...lasts.map(q => q[1])), hi = Math.max(...lasts.map(q => q[1]));
+      return { now: `${fmt(lo, c.d)}${hi !== lo ? ` – ${fmt(hi, c.d)}` : ""}<small>${c.unit}</small>`, sub: "dernières valeurs connues" };
+    }
+    const p = c.lines[0].p, last = p[p.length - 1];
+    const ref = at(p, t0) || p.find(q => q[0] >= t0);
+    const delta = ref && last ? last[1] - ref[1] : 0;
+    const dTxt = Math.abs(delta) >= Math.pow(10, -c.d) / 2 ? ` · ${delta > 0 ? "+" : "−"}${fmt(Math.abs(delta), c.d)} ${c.unit} sur la période` : "";
+    return { now: `${fmt(last[1], c.d)}<small>${c.unit}</small>`, sub: `le ${fullFr(last[0])}${dTxt}` };
+  }
+
+  const grid = $("histoGrid");
+  if (!CHARTS.length) {
+    grid.className = "grid";
+    grid.innerHTML = `<article class="card">${EMPTY("Pas encore d'historique. Il se construit tout seul au fil des lectures (« status ») et des messages reçus en direct (« stream »).", true)}</article>`;
+  }
+  const cards = CHARTS.map(c => {
+    const a = document.createElement("article");
+    a.className = "card chart-card";
+    a.innerHTML = `<h2>${esc(c.title)}</h2><div class="now num"></div><div class="sub"></div>
+      ${c.lines && c.lines.length > 1 ? `<div class="c-legend">${c.lines.map(l => `<span><i style="background:${l.c}"></i>${esc(l.n)}</span>`).join("")}</div>` : ""}
+      <div class="chart"></div>${c.note ? `<div class="hint">${esc(c.note)}</div>` : ""}
+      <details><summary>Tableau des valeurs</summary><div class="tbl"></div></details>`;
+    grid.appendChild(a);
+    return a;
+  });
+
+  function drawAll() {
+    if (!$("p-historique").classList.contains("on")) return;
+    const t1 = Date.now();
+    document.querySelectorAll("#histoRange button").forEach(b => b.classList.toggle("on", +b.dataset.d === days));
+    $("histoHint").textContent = allTimes.length
+      ? `Relevés depuis le ${new Date(firstAll).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })} · survolez une courbe pour voir les valeurs.`
+      : "";
+    CHARTS.forEach((c, i) => {
+      // l'axe du temps commence au premier relevé de ce graphique (sans dépasser la période choisie)
+      const first = Math.min(...(c.cols ? ODO : c.lines.flatMap(l => l.p)).map(q => q[0]), t1 - HOUR);
+      const t0 = days ? Math.max(t1 - days * DAY, first) : first;
+      const h = headline(c, t0), card = cards[i];
+      card.querySelector(".now").innerHTML = h.now;
+      card.querySelector(".sub").textContent = h.sub;
+      card.querySelector(".tbl").innerHTML = table(c, t0, t1);
+      draw(c, card, t0, t1);
+    });
+  }
+  window.drawHistory = drawAll;
+  $("histoRange").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    days = +b.dataset.d;
+    try { localStorage.setItem("histoDays", String(days)); } catch (er) {}
+    drawAll();
+  });
+  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(drawAll, 120); });
+})();
+
 /* ================= navigation par onglets ================= */
 (() => {
-  const ids = ["apercu", "entretien", "conduite", "donnees", "flux"];
+  const ids = ["apercu", "entretien", "conduite", "historique", "donnees", "flux"];
   let current = null;
   const show = () => {
     const id = ids.includes(location.hash.slice(1)) ? location.hash.slice(1) : "apercu";
@@ -1176,6 +1468,7 @@ function fluxValue(k, e) {
     document.querySelectorAll("#tabs a").forEach(a => a.classList.toggle("on", a.dataset.p === id));
     if (id === "apercu" && current && current !== "apercu") replayOverview();
     if (id === "flux") { const b = $("fluxBadge"); b.hidden = true; b.textContent = ""; window.__fluxUnseen = 0; }
+    if (id === "historique" && window.drawHistory) window.drawHistory();
     current = id;
   };
   window.addEventListener("hashchange", () => { show(); const t = $("tabs"); if (t.getBoundingClientRect().top < 0 || scrollY > t.offsetTop) scrollTo({ top: t.offsetTop, behavior: "smooth" }); });
