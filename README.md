@@ -93,6 +93,8 @@ Un seul script Python, sans dépendance externe pour l'usage courant. Seul le st
 ## 📸 Captures d'écran
 
 > Captures réalisées avec des **données fictives**. La photo est celle que l'API BMW CarData renvoie pour le véhicule (commande `profile`).
+>
+> Pour les refaire après une modification de la page : `python outils/captures_demo.py --captures` génère la page de démonstration et refait les captures avec Microsoft Edge. La capture mobile se fait à la main, dans un navigateur à 375 px de large.
 
 <div align="center">
 
@@ -367,6 +369,8 @@ bmw-cardata-dashboard/
 ├── dashboard_template.html   # modèle du tableau de bord (HTML, CSS et JavaScript)
 ├── catalogue_bmw.json        # noms officiels en français des 294 données BMW CarData
 ├── requirements.txt          # paho-mqtt (streaming uniquement)
+├── outils/
+│   └── captures_demo.py      # page de démonstration (données fictives) et captures du README
 ├── docs/
 │   ├── banniere.svg
 │   └── captures/             # captures d'écran (données fictives)

@@ -15,6 +15,8 @@ voiture.jpg
 tableau_de_bord.html
 
 # --- Fichiers temporaires ---
+# page de démonstration (outils/captures_demo.py)
+demo/
 *.tmp
 __pycache__/
 *.pyc
