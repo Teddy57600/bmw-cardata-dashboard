@@ -7,7 +7,7 @@ Aucune donnée personnelle : VIN factice, position publique (BMW Welt, Munich), 
 sur 60 jours. Seule la photo du véhicule (voiture.png, si elle existe) est reprise telle quelle.
 Le dossier demo/ est ignoré par Git.
 """
-import json, random, shutil, subprocess, sys
+import functools, http.server, json, random, shutil, subprocess, sys, threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -146,14 +146,23 @@ def capture(page):
     if not edge:
         sys.exit("Microsoft Edge introuvable : ouvrez demo/demo.html et faites les captures à la main.")
     CAPTURES.mkdir(parents=True, exist_ok=True)
+    # page servie en http (et non en file://) : OpenStreetMap refuse ses tuiles sans en-tête Referer
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+    handler = functools.partial(Quiet, directory=str(OUT))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_port}/{page.name}"
     for tab, height in SHOTS.items():
         # profil Edge dédié : sans lui, Edge déjà ouvert ignore la demande et aucun fichier n'est écrit
         subprocess.run([str(edge), "--headless=new", "--disable-gpu", "--hide-scrollbars",
                         "--force-device-scale-factor=1", f"--window-size=1440,{height}",
                         "--virtual-time-budget=5000", f"--user-data-dir={OUT / 'edge-profil'}",
-                        f"--screenshot={CAPTURES / (tab + '.png')}", f"{page.as_uri()}?still#{tab}"],
+                        f"--screenshot={CAPTURES / (tab + '.png')}", f"{url}?still#{tab}"],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print("Capture :", (CAPTURES / f"{tab}.png").relative_to(PROJ))
+    server.shutdown()
     print("Capture mobile (mobile.jpg, 750 × 1624) : à faire à la main dans un navigateur à 375 px de large,\n"
           "Edge en mode headless ne descend pas sous ~500 px.")
 
