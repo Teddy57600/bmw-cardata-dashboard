@@ -289,7 +289,7 @@ Avec `-AvecDonnees`, les données déjà présentes sur le serveur sont mises de
 > [!WARNING]
 > **Une seule connexion de streaming par compte BMW.** Une fois le conteneur lancé, ne relancez plus `stream` sur votre PC. Le serveur renouvelle les jetons de son côté : ceux du PC peuvent ne plus être valables, et il faudrait alors refaire `login`.
 >
-> La page n'a pas de mot de passe et affiche la position de la voiture. N'exposez donc `BMW_BIND` que sur votre réseau local, jamais sur une adresse publique.
+> La page n'a pas de mot de passe et affiche la position de la voiture, ainsi que tout son historique. N'exposez donc `BMW_BIND` que sur votre réseau local, jamais sur une adresse publique.
 
 <br>
 
@@ -302,7 +302,7 @@ Avec `-AvecDonnees`, les données déjà présentes sur le serveur sont mises de
 | **Entretien & alertes** | Voyants Check Control, entretien détaillé (huile, liquide de frein…), échéances, batteries, alarme, mémoire des défauts |
 | **Conduite & conso** | Consommation moyenne réelle (compteur officiel OBFCM), habitudes de conduite, cap et altitude, moteur, navigation, programmateurs de clim |
 | **Historique** | Graphiques sur 7, 30 ou 90 jours : carburant, autonomie, kilomètres par jour, kilométrage, pression des pneus, batterie 12 V. Valeurs au survol, et tableau des valeurs sous chaque graphique |
-| **Toutes les données** | La liste complète des valeurs connues, avec une recherche |
+| **Toutes les données** | La liste complète des valeurs connues, avec une recherche. Un clic sur une ligne déplie **toutes ses valeurs passées**, lues dans la [base](#base-historique) : une ligne par changement, les valeurs identiques qui se suivent étant regroupées (page en direct seulement ; une page ouverte comme fichier ne montre que les courbes de l'onglet Historique) |
 | **Flux en direct** | Chaque message MQTT reçu, regroupé par rafale, avec filtre, pause et repérage des données « hors tableau » |
 
 Une valeur transmise il y a plus de **7 jours** est signalée comme ancienne donnée.
@@ -310,7 +310,7 @@ Une valeur transmise il y a plus de **7 jours** est signalée comme ancienne don
 <a id="base-historique"></a>
 ### 🗄️ La base de l'historique (SQLite)
 
-Chaque valeur reçue, par `stream` ou par `status`, est enregistrée dans **`historique.db`**, une base SQLite créée à côté du script. Elle alimente l'onglet Historique : la page ne relit que les données des graphiques, au lieu de tout l'historique à chaque message. Python intègre SQLite, il n'y a donc rien à installer.
+Chaque valeur reçue, par `stream` ou par `status`, est enregistrée dans **`historique.db`**, une base SQLite créée à côté du script. Elle alimente l'onglet Historique et le détail de chaque ligne de l'onglet Toutes les données : la page ne relit que les données des graphiques, au lieu de tout l'historique à chaque message. Python intègre SQLite, il n'y a donc rien à installer.
 
 La base est créée au premier lancement. Elle reprend alors automatiquement l'historique déjà présent (`historique_stream.jsonl`, `historique_lectures.jsonl` et `derniere_lecture.json`). Si vous la supprimez, elle est reconstruite de la même façon.
 
@@ -372,7 +372,7 @@ La liste se modifie dans `DESCRIPTORS`, en haut de `bmw_cardata.py`. Le catalogu
 <a id="confidentialite"></a>
 ## 🔒 Confidentialité
 
-Tout reste **sur votre PC**. Le script ne parle qu'aux serveurs de BMW, et la page en direct n'est accessible que depuis votre machine (`127.0.0.1`). Le petit serveur local ne sert que la page et la photo, jamais vos jetons.
+Tout reste **sur votre PC**. Le script ne parle qu'aux serveurs de BMW, et la page en direct n'est accessible que depuis votre machine (`127.0.0.1`). Le petit serveur local ne sert que la page, la photo et l'historique d'une donnée à la demande (position comprise), jamais vos jetons ni votre configuration.
 
 Les fichiers personnels sont exclus du dépôt par le [`.gitignore`](.gitignore) :
 

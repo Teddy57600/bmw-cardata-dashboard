@@ -248,6 +248,18 @@ details[open] summary { margin-bottom: 4px; }
 .all td.k { color: var(--muted); font-size: 11px; word-break: break-all; }
 .all td.v { font-weight: 500; word-break: break-word; }
 .all tr.old td.t { color: var(--warn); }
+.all tr.row { cursor: pointer; }
+.all tr.row:hover td, .all tr.row.open td { background: rgba(255,255,255,.035); }
+.all tr.row:focus-visible { outline: 2px solid rgba(61,139,255,.6); outline-offset: -2px; }
+.all tr.row td:first-child::before { content: "›"; display: inline-block; width: 14px; color: var(--muted); transition: transform .15s; }
+.all tr.row.open td:first-child::before { transform: rotate(90deg); }
+.all tr.hist > td { padding: 4px 10px 14px 34px; background: rgba(255,255,255,.02); }
+.hist-sum { color: var(--muted); font-size: 12px; margin: 4px 0 8px; }
+.hist-list { max-height: 320px; overflow: auto; }
+.hist-list table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.hist-list td { padding: 5px 10px 5px 0; border-bottom: 1px solid var(--panel-line); vertical-align: top; }
+.hist-list td.d { color: var(--muted); white-space: nowrap; }
+.hist-list td.n { color: var(--faint); white-space: nowrap; text-align: right; }
 .table-wrap { max-height: 70vh; overflow: auto; border-radius: 10px; }
 @media (max-width: 560px) { .all td.k { display: none; } .hero-num { font-size: 50px; } }
 
@@ -1114,11 +1126,82 @@ function renderItems(list) {
   $("allCount").textContent = `${keys.length} données`;
   $("allBody").innerHTML = keys.map(k => {
     const d = ts(k), text = fv(k).t;
-    return `<tr class="${isStale(d) ? "old" : ""}" data-s="${esc(((L[k] || "") + " " + k + " " + text).toLowerCase())}"><td>${esc(L[k] || k.split(".").slice(-2).join(" "))}</td><td class="v" title="${esc(String(raw(k)))}">${esc(text)}</td><td class="t">${d ? dateFr(d) : ""}</td><td class="k">${esc(k)}</td></tr>`;
+    return `<tr class="row${isStale(d) ? " old" : ""}" tabindex="0" aria-expanded="false" title="Voir toutes les valeurs reçues" data-k="${esc(k)}" data-s="${esc(((L[k] || "") + " " + k + " " + text).toLowerCase())}"><td>${esc(L[k] || k.split(".").slice(-2).join(" "))}</td><td class="v" title="${esc(String(raw(k)))}">${esc(text)}</td><td class="t">${d ? dateFr(d) : ""}</td><td class="k">${esc(k)}</td></tr>`;
   }).join("");
   $("search").addEventListener("input", e => {
     const q = e.target.value.trim().toLowerCase();
-    document.querySelectorAll("#allBody tr").forEach(tr => tr.hidden = q && !tr.dataset.s.includes(q));
+    document.querySelectorAll("#allBody tr.row").forEach(tr => {
+      tr.hidden = q && !tr.dataset.s.includes(q);
+      if (tr.hidden && tr.classList.contains("open")) toggleHistory(tr);
+    });
+  });
+
+  /* historique d'une donnée : clic (ou Entrée) sur sa ligne */
+  const histCache = {};
+  const fvAt = (k, value, unit) => {  // même mise en forme que la valeur actuelle
+    const keep = T[k];
+    T[k] = { value, unit: unit ?? (keep && keep.unit) };
+    try { return fv(k).t; } finally { T[k] = keep; }
+  };
+  async function loadHistory(k) {
+    if (histCache[k]) return histCache[k];
+    let values = null, full = false;
+    if (/^https?:$/.test(location.protocol)) {
+      try {
+        const r = await fetch(`history.json?key=${encodeURIComponent(k)}`, { cache: "no-store" });
+        if (r.ok) { values = (await r.json()).values; full = true; }
+      } catch (e) { /* page servie sans la base (démonstration) */ }
+    }
+    if (!values) {  // page ouverte comme fichier : courbes intégrées à la page, sinon la seule valeur actuelle
+      const serie = ((DATA.history || {})[k] || []).slice().reverse().map(([t, v]) => [t, v, null]);
+      values = serie.length ? serie : T[k] ? [[T[k].timestamp, T[k].value, T[k].unit]] : [];
+    }
+    return (histCache[k] = { values, full });
+  }
+  function renderHistory(k, { values, full }) {
+    if (!values.length) return `<div class="hist-sum">Aucune valeur enregistrée.</div>`;
+    // valeurs identiques qui se suivent regroupées : une ligne par changement
+    const runs = [];
+    for (const [t, v, u] of values) {
+      const text = fvAt(k, v, u), last = runs[runs.length - 1];
+      if (last && last.text === text) { last.from = t; last.n++; }
+      else runs.push({ text, from: t, to: t, n: 1 });
+    }
+    const day = x => x.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+    const hour = x => x.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const d = t => { const x = new Date(t); return isNaN(x) ? "" : `${day(x)} ${hour(x)}`; };
+    const span = (a, b) => { const x = new Date(a), y = new Date(b); return isNaN(x) || isNaN(y) ? "" : day(x) === day(y) ? `${day(x)} ${hour(x)} → ${hour(y)}` : `${d(a)} → ${d(b)}`; };
+    const MAX = 300, shown = runs.slice(0, MAX);
+    const plural = (n, w) => `${fmt(n)} ${w}${n > 1 ? "s" : ""}`;
+    const first = d(values[values.length - 1][0]);
+    const sum = values.length === 1 ? `1 valeur reçue, le ${first}`
+      : `${plural(values.length, "valeur")} reçues depuis le ${first} · ${runs.length === 1 ? "toujours la même" : plural(runs.length - 1, "changement")}`;
+    return `<div class="hist-sum">${esc(sum)}${full ? "" : " · historique complet sur la page servie par la commande stream"}</div>
+      <div class="hist-list"><table>${shown.map(r => `<tr><td class="d">${esc(r.n > 1 ? span(r.from, r.to) : d(r.to))}</td><td>${esc(r.text)}</td><td class="n">${r.n > 1 ? `${fmt(r.n)} relevés` : ""}</td></tr>`).join("")}</table>
+      ${runs.length > MAX ? `<div class="hist-sum">… et ${plural(runs.length - MAX, "changement")} plus ancien${runs.length - MAX > 1 ? "s" : ""}</div>` : ""}</div>`;
+  }
+  async function toggleHistory(tr) {
+    const next = tr.nextElementSibling;
+    if (tr.classList.contains("open")) {
+      tr.classList.remove("open"); tr.setAttribute("aria-expanded", "false");
+      if (next && next.classList.contains("hist")) next.remove();
+      return;
+    }
+    tr.classList.add("open"); tr.setAttribute("aria-expanded", "true");
+    const row = document.createElement("tr");
+    row.className = "hist";
+    row.innerHTML = `<td colspan="4"><div class="hist-sum">Chargement…</div></td>`;
+    tr.after(row);
+    const k = tr.dataset.k;
+    row.firstElementChild.innerHTML = renderHistory(k, await loadHistory(k));
+  }
+  $("allBody").addEventListener("click", e => {
+    const tr = e.target.closest("tr.row");
+    if (tr && !getSelection().toString()) toggleHistory(tr);
+  });
+  $("allBody").addEventListener("keydown", e => {
+    const tr = e.target.closest("tr.row");
+    if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleHistory(tr); }
   });
 })();
 

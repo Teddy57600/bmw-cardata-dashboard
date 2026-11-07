@@ -22,6 +22,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 import sys
@@ -679,6 +680,24 @@ def save_history(data, source, received=None):
         print(f"Base {HISTORY_DB.name} : écriture impossible ({e}).")
 
 
+HISTORY_ONE_MAX = 5000  # valeurs renvoyées au plus pour une donnée (onglet « Toutes les données »)
+
+
+def key_history(key):
+    """Toutes les valeurs connues d'une donnée, de la plus récente à la plus ancienne :
+    [[horodatage, valeur, unité, source], ...]."""
+    if not re.fullmatch(r"vehicle(\.[A-Za-z0-9_]+)+", key or ""):
+        return []
+    try:
+        with closing(open_db()) as db:
+            return [list(r) for r in db.execute(
+                "SELECT horodatage, valeur, unite, source FROM mesures WHERE cle = ? ORDER BY t DESC LIMIT ?",
+                (key, HISTORY_ONE_MAX))]
+    except sqlite3.Error as e:
+        print(f"Base {HISTORY_DB.name} : lecture impossible ({e}).")
+        return []
+
+
 def build_history(telematic):
     """Séries temporelles {clé: [[horodatage ISO, valeur], ...]} lues dans la base, complétées
     par les dernières valeurs connues. Une valeur est datée par la voiture (timestamp), pas par
@@ -855,7 +874,8 @@ class LiveState:
 
 
 def start_live_server():
-    """Petit serveur local qui sert UNIQUEMENT la page, la photo et l'état « en direct »."""
+    """Petit serveur local qui sert UNIQUEMENT la page, la photo, l'état « en direct » et
+    l'historique d'une donnée (jamais les jetons ni la configuration)."""
     allowed = {"/": DASHBOARD_FILE, "/tableau_de_bord.html": DASHBOARD_FILE}
     for p in DATA.glob("voiture.*"):
         allowed["/" + p.name] = p
@@ -878,6 +898,10 @@ def start_live_server():
                     msgs = [m for m in LiveState.log if m["seq"] > after]
                 body = json.dumps({"connected": LiveState.connected, "messages": msgs},
                                   ensure_ascii=False).encode()
+                ctype = "application/json"
+            elif path == "/history.json":  # toutes les valeurs d'une donnée (clé « key »)
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                body = json.dumps({"values": key_history(q.get("key", [""])[0])}, ensure_ascii=False).encode()
                 ctype = "application/json"
             elif path in allowed and allowed[path].exists():
                 with _lock:
