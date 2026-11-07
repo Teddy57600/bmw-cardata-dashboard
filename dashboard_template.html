@@ -988,18 +988,38 @@ function renderItems(list) {
   /* carte « Prochain entretien » de la vue d'ensemble */
   (() => {
     const monthFr = v => new Date(v).toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
+    /* Le CBS n'arrive qu'avec une lecture « status » (pas par le flux) : ses kilomètres restants datent
+       de ce moment-là. On en retire les km parcourus depuis, d'après l'historique du compteur. */
+    const driven = (() => {
+      const now = num("vehicle.vehicle.travelledDistance"), at = ts(CBS_KEY);
+      const serie = ((DATA.history || {})["vehicle.vehicle.travelledDistance"] || [])
+        .map(([t, v]) => [new Date(t), v]).filter(([t, v]) => !isNaN(t) && v != null);
+      if (now == null || !at || !serie.length) return 0;
+      const before = serie.filter(([t]) => t <= at).pop();
+      const after = serie.find(([t]) => t > at);
+      // sans relevé antérieur, le premier relevé suivant n'est retenu que s'il est du même jour
+      const ref = before || (after && after[0] - at < 86400000 ? after : null);
+      return ref ? Math.max(0, now - ref[1]) : 0;
+    })();
     const items = (cbs || []).filter(i => i && typeof i === "object").map(i => ({
       title: nice(i.title || i.type || "Entretien"),
-      km: isNaN(+i.unitOfLengthRemaining) || i.unitOfLengthRemaining === "" ? null : +i.unitOfLengthRemaining,
+      km: isNaN(+i.unitOfLengthRemaining) || i.unitOfLengthRemaining === "" ? null : Math.max(0, +i.unitOfLengthRemaining - driven),
+      bmwKm: +i.unitOfLengthRemaining,
       date: i.date && !isNaN(Date.parse(i.date)) ? new Date(i.date) : null,
       cls: sevClass(i.status),
     }));
     const byKm = items.filter(i => i.km != null).sort((a, b) => a.km - b.km)[0];
     const fallback = num("vehicle.status.serviceDistance.next");
     if (byKm) {
-      $("service").innerHTML = `${fmt(byKm.km)}<small>km</small>`;
+      $("service").innerHTML = `${driven ? "≈ " : ""}${fmt(byKm.km)}<small>km</small>`;
       $("serviceWhat").innerHTML = `${esc(byKm.title)}${byKm.date ? ` <span>· ou d'ici ${monthFr(byKm.date)}</span>` : ""}`;
       ageTag($("serviceAge"), CBS_KEY);
+      if (driven) {
+        const t = $("serviceAge");
+        t.title = `BMW : ${fmt(byKm.bmwKm)} km le ${ts(CBS_KEY).toLocaleDateString("fr-FR")}, moins ${fmt(driven)} km parcourus depuis`;
+        t.textContent = "estimé";
+        t.className = "tag";
+      }
     } else {
       $("service").innerHTML = fallback == null ? "—" : `${fmt(fallback)}<small>km</small>`;
       $("serviceWhat").innerHTML = "<span>avant la prochaine révision</span>";
