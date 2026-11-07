@@ -298,7 +298,7 @@ Avec `-AvecDonnees`, les données déjà présentes sur le serveur sont mises de
 
 | Onglet | Contenu |
 |---|---|
-| **Vue d'ensemble** | Photo officielle de la voiture (commande `profile`), jauge de carburant, compteur, prochain entretien (les km restants donnés par BMW moins ceux parcourus depuis, marqués « estimé »), vue de dessus (portes, vitres, coffre, capot, toit ouvrant, pneus), carte de la position (déplaçable, avec un bouton pour recentrer sur la voiture), fiche technique |
+| **Vue d'ensemble** | Photo officielle de la voiture (commande `profile`), jauge de carburant, compteur, prochain entretien (les km restants donnés par BMW moins ceux parcourus depuis, marqués « estimé »), vue de dessus (portes, vitres, coffre, capot, toit ouvrant, pneus), carte de la position (déplaçable, avec un bouton pour recentrer sur la voiture), fiche technique. Un clic sur « N options » ouvre la liste des options d'usine : BMW ne donne que leurs codes (codes SA), traduits d'après des listes publiques ; les codes techniques et ceux qui restent inconnus sont rangés à part |
 | **Entretien & alertes** | Voyants Check Control, entretien détaillé (huile, liquide de frein…), échéances, batteries, alarme, mémoire des défauts |
 | **Conduite & conso** | Consommation moyenne réelle (compteur officiel OBFCM), [consommation depuis le dernier plein](#conso-plein) (estimée), habitudes de conduite, cap et altitude, moteur, navigation, programmateurs de clim |
 | **Historique** | Graphiques sur 7, 30 ou 90 jours : carburant, autonomie, kilomètres par jour, kilométrage, pression des pneus, batterie 12 V. Valeurs au survol, et tableau des valeurs sous chaque graphique |

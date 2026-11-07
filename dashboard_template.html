@@ -180,6 +180,18 @@ body {
 .spec dt { color: var(--muted); font-size: 12px; }
 .spec dd { margin: 2px 0 0; font-weight: 500; }
 .vin { cursor: pointer; font-family: var(--display); letter-spacing: .08em; border-bottom: 1px dashed var(--faint); }
+.opt-link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; border-bottom: 1px dashed currentColor; }
+.opt-dlg { width: min(640px, calc(100vw - 32px)); max-height: min(80vh, 760px); padding: 0; border: 1px solid var(--panel-line); border-radius: 16px; background: #0e1218; color: var(--text); }
+.opt-dlg::backdrop { background: rgba(0,0,0,.6); }
+.opt-dlg header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px 10px; position: sticky; top: 0; background: #0e1218; }
+.opt-dlg h3 { margin: 0; font: 600 18px var(--display); letter-spacing: .02em; }
+.opt-dlg .close { background: rgba(255,255,255,.06); border: 1px solid var(--panel-line); color: var(--text); border-radius: 8px; width: 32px; height: 32px; font-size: 18px; cursor: pointer; }
+.opt-body { padding: 0 20px 18px; }
+.opt-body h4 { margin: 16px 0 6px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+.opt-row { display: grid; grid-template-columns: 44px 1fr; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--panel-line); font-size: 13.5px; }
+.opt-row code { color: var(--muted); font: 12px/1.6 var(--display); letter-spacing: .06em; }
+.opt-row .q { color: var(--faint); font-size: 12px; }
+.opt-note { color: var(--muted); font-size: 12px; margin: 12px 0 0; }
 .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 7px; vertical-align: -1px;
   background: radial-gradient(circle at 30% 30%, #b9bec4, #5b6168 60%, #34383d); box-shadow: 0 0 0 1px rgba(255,255,255,.2); }
 
@@ -885,11 +897,38 @@ function countUp(el, to, dur) {
     ["Carrosserie", P.numberOfDoors && `${P.bodyType || ""} · ${P.numberOfDoors} portes`],
     ["Teinte", P.colourDescription && `<span class="swatch"></span>${esc(colorFr(P.colourDescription))}`],
     ["Sortie d'usine", P.constructionDate && new Date(P.constructionDate).toLocaleDateString("fr-FR", { month: "long", year: "numeric" })],
-    ["Équipements", [P.hasNavi && "Navigation", P.hasSunRoof && "Toit ouvrant", P.saList && `${P.saList.split(",").length} options`].filter(Boolean).join(" · ")],
+    ["Équipements", [P.hasNavi && "Navigation", P.hasSunRoof && "Toit ouvrant", P.saList && `<button type="button" class="opt-link" id="optLink">${P.saList.split(",").length} options</button>`].filter(Boolean).join(" · ")],
     ["VIN", vin && `<span class="vin" id="vin" title="Cliquer pour afficher">${esc(masked)}</span>`],
   ].filter(r => r[1]);
   $("spec").innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${/</.test(v) ? v : esc(v)}</dd></div>`).join("");
   const v = $("vin"); if (v) v.onclick = () => { v.textContent = v.textContent === vin ? masked : vin; };
+
+  /* liste des options (codes SA du profil) : clic sur « N options » */
+  const ol = $("optLink");
+  if (ol) ol.onclick = () => {
+    let dlg = $("optDlg");
+    if (!dlg) {
+      const codes = P.saList.split(",").map(c => c.trim().replace(/^0(?=\w{3}$)/, "").toUpperCase()).filter(Boolean);
+      const groups = { o: [], t: [], u: [] };
+      for (const c of codes) {
+        const e = SA_FR[c];
+        if (!e) groups.u.push([c, "Non identifié"]);
+        else groups[e[1] === "t" ? "t" : "o"].push([c, e[0], e[1] === "?"]);
+      }
+      const sortFr = l => l.sort((a, b) => a[1].localeCompare(b[1], "fr"));
+      const list = (title, l) => l.length ? `<h4>${title} (${l.length})</h4>` + l.map(([c, t, q]) =>
+        `<div class="opt-row"><code>${esc(c)}</code><span>${esc(t)}${q ? ' <span class="q">(à confirmer)</span>' : ""}</span></div>`).join("") : "";
+      dlg = document.createElement("dialog");
+      dlg.className = "opt-dlg"; dlg.id = "optDlg";
+      dlg.innerHTML = `<header><h3>${codes.length} options d'usine</h3><button type="button" class="close" aria-label="Fermer">×</button></header>
+        <div class="opt-body">${list("Équipements", sortFr(groups.o))}${list("Codes techniques (marché, homologation)", sortFr(groups.t))}${list("Codes non identifiés", groups.u.sort())}
+        <p class="opt-note">BMW ne transmet que les codes d'options (codes SA). Leur nom vient de listes publiques de codes BMW, qui ne couvrent pas toutes les options récentes.</p></div>`;
+      document.body.append(dlg);
+      dlg.querySelector(".close").onclick = () => dlg.close();
+      dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });  // clic à côté
+    }
+    dlg.showModal();
+  };
 })();
 
 /* ---------------- fraîcheur ---------------- */
@@ -951,6 +990,33 @@ const ITEM_FR = {
   RECOMMENDED_SERVICE: "Entretien recommandé", TIRE_PRESSURE: "Pression des pneus", ENGINE_OIL_LEVEL: "Niveau d'huile",
   WASHER_FLUID: "Lave-glace", BATTERY: "Batterie", SERVICE: "Entretien",
   LOW: "Faible", MEDIUM: "Moyenne", HIGH: "Élevée", INFO: "Information",
+};
+/* Codes d'options BMW (codes SA, sans le 0 initial du profil) → [nom, type] :
+   "o" équipement, "t" code technique, "?" nom à confirmer. Sources : listes publiques de codes BMW. */
+const SA_FR = {
+  "1CB": ["Calcul des émissions de CO2", "t"], "1CE": ["Sélection pour contrôle de conformité de production", "t"],
+  "230": ["Équipement spécifique Union européenne", "t"], "548": ["Compteur de vitesse en km/h", "t"],
+  "854": ["Combiné d'instruments en français", "t"], "8KA": ["Code technique BMW", "t"], "8R9": ["Code technique BMW", "t"],
+  "205": ["Boîte automatique", "o"], "248": ["Volant chauffant", "o"], "2PA": ["Écrous antivol", "o"],
+  "2TE": ["Boîte automatique Sport avec palettes au volant", "o"], "2VB": ["Affichage de la pression des pneus", "o"],
+  "2VC": ["Kit de réparation des pneus", "o"], "2VF": ["Suspension adaptative M", "o"],
+  "302": ["Alarme antivol", "o"], "316": ["Hayon à ouverture et fermeture automatiques", "o"],
+  "319": ["Télécommande universelle intégrée", "o"], "322": ["Accès confort (sans clé)", "o"],
+  "337": ["Pack M Sport", "o"], "33B": ["Pack M Sport Pro", "o"], "3MF": ["Feux M Shadow Line (assombris)", "o"],
+  "402": ["Toit ouvrant panoramique électrique", "o"], "420": ["Vitres arrière surteintées", "o"],
+  "428": ["Triangle de signalisation et trousse de secours", "o"],
+  "430": ["Rétroviseurs intérieur et extérieurs électrochromes", "o"], "431": ["Rétroviseur intérieur électrochrome", "o"],
+  "455": ["Siège conducteur à réglage électrique ou siège actif", "?"], "481": ["Sièges sport", "o"],
+  "494": ["Sièges avant chauffants", "o"], "4GQ": ["Ceintures de sécurité M", "o"],
+  "534": ["Climatisation automatique", "o"], "552": ["Phares LED adaptatifs", "o"],
+  "5AC": ["Assistant de feux de route", "o"], "5AS": ["Driving Assistant", "o"], "5AT": ["Driving Assistant Plus", "?"],
+  "5AV": ["Active Guard (freinage d'urgence et alertes)", "o"], "5DN": ["Parking Assistant Plus", "o"],
+  "610": ["Affichage tête haute", "o"], "654": ["Radio numérique DAB", "o"], "688": ["Système audio Harman Kardon", "o"],
+  "6AE": ["Teleservices", "o"], "6AF": ["Appel d'urgence intelligent", "o"], "6NX": ["Recharge sans fil du smartphone", "o"],
+  "6PA": ["Personal eSIM 5G", "o"], "6U3": ["BMW Live Cockpit Professional", "o"],
+  "710": ["Volant M en cuir", "o"], "754": ["Becquet arrière M", "o"], "760": ["Shadow Line brillant", "o"],
+  "775": ["Ciel de toit anthracite", "o"], "7M9": ["Shadow Line brillant BMW Individual étendu", "o"],
+  "8TF": ["Protection active des piétons", "o"],
 };
 const TITLE_FR = {
   "engine oil": "Huile moteur", "vehicle check": "Contrôle du véhicule", "brake fluid": "Liquide de frein",
