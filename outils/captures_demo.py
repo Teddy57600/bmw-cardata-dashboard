@@ -36,6 +36,8 @@ def build_page():
     b.LAST_FILE = OUT / "derniere_lecture.json"
     b.HISTORY_DB = OUT / "historique.db"
     b.HISTORY_DB.unlink(missing_ok=True)  # recréée à partir des journaux fictifs ci-dessous
+    b.CONFIG_FILE = OUT / "config.json"  # seulement la capacité du réservoir (conso depuis le plein)
+    b.CONFIG_FILE.write_text(json.dumps({"tank_liters": 49}), encoding="utf-8")
     b.PROFILE_FILE.write_text(json.dumps({
         "brand": "BMW", "modelName": "120d", "series": "1", "seriesDevt": "F70", "bodyType": "Sports Hatch",
         "numberOfDoors": 5, "driveTrain": "MHEV", "propulsionType": "DI", "engine": "B47L",
@@ -57,7 +59,7 @@ def build_page():
         t = min(t + timedelta(hours=random.uniform(6, 30)), end)
         km = random.choice([0, 0, 14, 22, 35, 48, 90, 180])
         odo += km
-        fuel -= km * 0.075
+        fuel -= km * 0.105  # % du réservoir de 49 L par km : environ 5,1 L/100 km
         if fuel < 14:
             fuel = random.choice([92, 96, 100])
         volt = min(12.9, max(12.35, volt + random.uniform(-.05, .05) + (.02 if km > 40 else -.015)))

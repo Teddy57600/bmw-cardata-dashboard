@@ -472,6 +472,11 @@ footer { color: var(--faint); font-size: 12px; text-align: center; padding: 34px
         <div class="hero-num num" id="conso">—</div>
         <div class="hint" id="consoHint"></div>
       </article>
+      <article class="card">
+        <h2 id="refuelTitle">Depuis le dernier plein <span class="tag">estimé</span></h2>
+        <div class="hero-num num" id="refuel">—</div>
+        <div class="hint" id="refuelHint"></div>
+      </article>
       <article class="card"><h2>Habitudes de conduite</h2><div id="habitList"></div></article>
       <article class="card">
         <h2>Orientation &amp; altitude</h2>
@@ -1077,6 +1082,26 @@ function renderItems(list) {
     $("conso").innerHTML = `${fmt(fuelL / refKm * 100, 1)}<small>L/100 km</small>`;
     $("consoHint").textContent = `${fmt(fuelL)} L consommés sur ${fmt(refKm)} km (compteur officiel OBFCM).`;
   } else $("consoHint").textContent = "Pas encore transmis par la voiture.";
+
+  /* conso depuis le plein : estimée par le script (niveau du réservoir en % et compteur) */
+  (() => {
+    const r = DATA.sinceRefuel, el = $("refuel"), hint = $("refuelHint");
+    if (!r) { hint.textContent = "Pas encore assez de relevés du niveau de carburant."; return; }
+    const since = new Date(r.since), when = isNaN(since) ? "" : since.toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+    if (!r.refuel) $("refuelTitle").firstChild.textContent = `Depuis le ${when} `;
+    const base = `${fmt(r.km)} km parcourus, niveau passé de ${fmt(r.startLevel)} % à ${fmt(r.level)} %`;
+    const from = r.refuel ? `Plein repéré le ${when}. ` : "Aucun plein repéré dans l'historique : calcul depuis le premier relevé. ";
+    if (!r.tank) {
+      el.innerHTML = `${fmt(r.usedPct)}<small>% du réservoir</small>`;
+      hint.textContent = `${from}${base}. Indiquez la capacité du réservoir (« tank_liters » dans config.json) pour obtenir des litres.`;
+    } else if (r.l100 == null || r.km < 20) {
+      el.innerHTML = `${fmt(r.liters, 1)}<small>L</small>`;
+      hint.textContent = `${from}${base}. Pas encore assez de kilomètres pour une consommation fiable.`;
+    } else {
+      el.innerHTML = `≈ ${fmt(r.l100, 1)}<small>L/100 km</small>`;
+      hint.textContent = `${from}≈ ${fmt(r.liters, 1)} L consommés en ${fmt(r.km)} km (niveau de ${fmt(r.startLevel)} % à ${fmt(r.level)} %, réservoir de ${fmt(r.tank)} L). Le niveau n'est connu qu'au % près : à ± ${fmt(r.margin, 1)} L/100 km, de plus en plus précis avec les kilomètres.`;
+    }
+  })();
 
   const km = num("vehicle.vehicle.travelledDistance");
   const lo = num("vehicle.vehicle.speedRange.lowerBound"), hi = num("vehicle.vehicle.speedRange.upperBound");

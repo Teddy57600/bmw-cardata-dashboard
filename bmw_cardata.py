@@ -680,6 +680,58 @@ def save_history(data, source, received=None):
         print(f"Base {HISTORY_DB.name} : écriture impossible ({e}).")
 
 
+REFUEL_MIN_RISE = 10  # hausse du niveau (points de %) qui signale un plein
+
+
+def since_refuel(telematic, tank_liters):
+    """Consommation estimée depuis le dernier plein, d'après le niveau du réservoir (en %) et le
+    compteur. BMW ne transmet pas cette donnée : le niveau n'a qu'une précision de 1 %, donc
+    l'estimation s'affine avec les kilomètres. Renvoie None s'il n'y a pas de quoi calculer."""
+    lvl_key, odo_key = "vehicle.drivetrain.fuelSystem.level", "vehicle.vehicle.travelledDistance"
+    series = {lvl_key: {}, odo_key: {}}
+    try:
+        with closing(open_db()) as db:
+            for k, t, v in db.execute("SELECT cle, t, valeur FROM mesures WHERE cle IN (?, ?)", (lvl_key, odo_key)):
+                if isinstance(v, (int, float)):
+                    series[k][t] = v
+    except sqlite3.Error as e:
+        print(f"Base {HISTORY_DB.name} : lecture impossible ({e}).")
+    for k in series:  # dernière valeur connue, au cas où elle ne serait pas encore dans la base
+        e = (telematic or {}).get(k)
+        dt = parse_time(e.get("timestamp")) if isinstance(e, dict) else None
+        if dt:
+            try:
+                series[k][dt.timestamp()] = float(e.get("value"))
+            except (TypeError, ValueError):
+                pass
+    lvl, odo = sorted(series[lvl_key].items()), sorted(series[odo_key].items())
+    if len(lvl) < 2 or not odo:
+        return None
+    start, refuel = 0, False
+    for i in range(1, len(lvl)):
+        if lvl[i][1] - lvl[i - 1][1] >= REFUEL_MIN_RISE:
+            start, refuel = i, True
+    t0, l0 = lvl[start]
+    # le niveau remonte parfois d'un point après le plein (voiture à plat) : on part du plus haut
+    l0 = max(v for t, v in lvl[start:] if t - t0 < 3600)
+    t1, l1 = lvl[-1]
+    before = [v for t, v in odo if t <= t0]
+    km0 = before[-1] if before else next((v for t, v in odo if t - t0 < 86400), None)
+    if km0 is None:
+        return None
+    km = max(0, odo[-1][1] - km0)
+    used_pct = max(0, l0 - l1)
+    out = {"since": datetime.fromtimestamp(t0, timezone.utc).isoformat(), "refuel": refuel,
+           "startLevel": l0, "level": l1, "km": km, "usedPct": used_pct, "tank": tank_liters}
+    if tank_liters:
+        out["liters"] = round(used_pct / 100 * tank_liters, 1)
+        if km > 0:
+            out["l100"] = round(out["liters"] / km * 100, 1)
+            # ±1 point de % à chaque bout : marge de l'estimation
+            out["margin"] = round(2 / 100 * tank_liters / km * 100, 1)
+    return out
+
+
 HISTORY_ONE_MAX = 5000  # valeurs renvoyées au plus pour une donnée (onglet « Toutes les données »)
 
 
@@ -758,6 +810,7 @@ def render_dashboard(vin, telematic, fetched_at, fetched_iso=None, live=False, p
         "catalogue": {k: v.get("name") for k, v in (load_json(CATALOGUE_FILE, {}) or {}).items()},
         "streamLog": list(LiveState.log)[-STREAM_LOG_IN_PAGE:] if live else read_stream_history(),
         "history": build_history(telematic),
+        "sinceRefuel": since_refuel(telematic, (load_json(CONFIG_FILE, {}) or {}).get("tank_liters")),
         "live": live,
     }
     blob = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")

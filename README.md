@@ -300,12 +300,15 @@ Avec `-AvecDonnees`, les données déjà présentes sur le serveur sont mises de
 |---|---|
 | **Vue d'ensemble** | Photo officielle de la voiture (commande `profile`), jauge de carburant, compteur, prochain entretien (les km restants donnés par BMW moins ceux parcourus depuis, marqués « estimé »), vue de dessus (portes, vitres, coffre, capot, toit ouvrant, pneus), carte de la position (déplaçable, avec un bouton pour recentrer sur la voiture), fiche technique |
 | **Entretien & alertes** | Voyants Check Control, entretien détaillé (huile, liquide de frein…), échéances, batteries, alarme, mémoire des défauts |
-| **Conduite & conso** | Consommation moyenne réelle (compteur officiel OBFCM), habitudes de conduite, cap et altitude, moteur, navigation, programmateurs de clim |
+| **Conduite & conso** | Consommation moyenne réelle (compteur officiel OBFCM), [consommation depuis le dernier plein](#conso-plein) (estimée), habitudes de conduite, cap et altitude, moteur, navigation, programmateurs de clim |
 | **Historique** | Graphiques sur 7, 30 ou 90 jours : carburant, autonomie, kilomètres par jour, kilométrage, pression des pneus, batterie 12 V. Valeurs au survol, et tableau des valeurs sous chaque graphique |
 | **Toutes les données** | La liste complète des valeurs connues, avec une recherche. Un clic sur une ligne déplie **toutes ses valeurs passées**, lues dans la [base](#base-historique) : une ligne par changement, les valeurs identiques qui se suivent étant regroupées (page en direct seulement ; une page ouverte comme fichier ne montre que les courbes de l'onglet Historique) |
 | **Flux en direct** | Chaque message MQTT reçu, regroupé par rafale, avec filtre, pause et repérage des données « hors tableau » |
 
 Une valeur transmise il y a plus de **7 jours** est signalée comme ancienne donnée.
+
+<a id="conso-plein"></a>
+**Consommation depuis le dernier plein.** BMW ne transmet ni cette valeur ni la consommation du dernier trajet. Le script l'estime à partir de l'historique : un plein est repéré quand le niveau du réservoir remonte d'au moins 10 points, puis les % consommés depuis sont convertis en litres et rapportés aux kilomètres parcourus. Indiquez pour cela la capacité du réservoir dans `config.json`, par exemple `"tank_liters": 49` pour une 120d F70. Sans cette valeur, la carte affiche seulement le % du réservoir consommé. Le niveau n'est connu qu'au % près : la marge d'erreur, affichée sur la carte, devient faible après quelques centaines de kilomètres. Si aucun plein n'est encore dans l'historique, le calcul part du premier relevé.
 
 <a id="base-historique"></a>
 ### 🗄️ La base de l'historique (SQLite)
@@ -379,7 +382,7 @@ Les fichiers personnels sont exclus du dépôt par le [`.gitignore`](.gitignore)
 | Fichier | Contenu |
 |---|---|
 | `tokens.json` | Jetons de connexion BMW (**à ne jamais partager**) |
-| `config.json` | Client ID, VIN, identifiant du conteneur |
+| `config.json` | Client ID, VIN, identifiant du conteneur, capacité du réservoir (`tank_liters`, facultatif) |
 | `derniere_lecture.json` | Dernières données connues, dont la position GPS |
 | `historique.db` | Base SQLite de toutes les valeurs reçues, dont les positions GPS successives |
 | `historique_stream.jsonl` | Journal brut des messages reçus en direct |
