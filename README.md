@@ -45,6 +45,7 @@
   - [3. Se connecter](#connexion)
 - [🕹️ Utilisation](#utilisation)
 - [📡 Streaming en direct](#streaming)
+- [🐳 En continu sur un serveur (Docker)](#docker)
 - [🖥️ Le tableau de bord](#tableau-de-bord)
   - [La base de l'historique (SQLite)](#base-historique)
 - [📊 Données récupérées](#donnees)
@@ -252,6 +253,46 @@ Ces paramètres s'affichent au démarrage, pour les comparer avec ceux du portai
 
 <br>
 
+<a id="docker"></a>
+## 🐳 En continu sur un serveur (Docker)
+
+Pour que le tableau de bord tourne jour et nuit sans laisser le PC allumé, `stream` peut fonctionner dans un conteneur Docker, par exemple sur un serveur domestique.
+
+- L'image ne contient que le code : le [`.dockerignore`](.dockerignore) fonctionne en liste blanche.
+- Les données personnelles (configuration, jetons, base de l'historique, photo) sont dans le dossier `data/`, monté sur `/data`. Elles ne sont lisibles que par l'utilisateur du conteneur.
+- Le conteneur redémarre tout seul et signale son état à Docker (contrôle de santé sur `/live.json`).
+
+**Sur la machine qui a Docker**, dans le dossier du projet :
+
+1. Copiez dans `data/` les fichiers personnels créés sur votre PC par `login` et `profile` : au minimum `config.json` et `tokens.json`. Ajoutez si vous le souhaitez `historique.db`, `derniere_lecture.json`, `historique_stream.jsonl`, `profil_vehicule.json` et `voiture.png`.
+2. Choisissez l'adresse d'écoute dans un fichier `.env` (par défaut, la page n'est accessible que depuis le serveur lui-même) :
+   ```ini
+   BMW_BIND=192.168.1.20
+   BMW_PORT=8765
+   ```
+3. Lancez le conteneur :
+   ```bash
+   docker compose up -d --build
+   ```
+
+**Vers un conteneur LXC Proxmox, depuis Windows**, le script [`outils/deployer-lxc.ps1`](outils/deployer-lxc.ps1) fait tout par SSH : il copie les fichiers sur l'hôte, les pousse dans le LXC, puis construit et lance le conteneur dans `/opt/bmw-cardata`.
+
+```powershell
+# première fois : code + données de ce PC
+.\outils\deployer-lxc.ps1 -ProxmoxHost 192.168.1.10 -ContainerId 102 -BindIp 192.168.1.20 -Port 8766 -AvecDonnees
+# mises à jour suivantes : code seul, les données du serveur sont conservées
+.\outils\deployer-lxc.ps1 -ProxmoxHost 192.168.1.10 -ContainerId 102 -BindIp 192.168.1.20 -Port 8766
+```
+
+Avec `-AvecDonnees`, les données déjà présentes sur le serveur sont mises de côté dans `data.avant-<date>`. Le script refuse de copier les données si `stream` tourne encore sur le PC. `-IdentityFile` indique une clé SSH particulière.
+
+> [!WARNING]
+> **Une seule connexion de streaming par compte BMW.** Une fois le conteneur lancé, ne relancez plus `stream` sur votre PC. Le serveur renouvelle les jetons de son côté : ceux du PC peuvent ne plus être valables, et il faudrait alors refaire `login`.
+>
+> La page n'a pas de mot de passe et affiche la position de la voiture. N'exposez donc `BMW_BIND` que sur votre réseau local, jamais sur une adresse publique.
+
+<br>
+
 <a id="tableau-de-bord"></a>
 ## 🖥️ Le tableau de bord
 
@@ -345,6 +386,7 @@ Les fichiers personnels sont exclus du dépôt par le [`.gitignore`](.gitignore)
 | `historique_lectures.jsonl` | Ancien journal des lectures `status`, repris dans la base s'il existe |
 | `profil_vehicule.json`, `voiture.png` | Fiche et photo du véhicule |
 | `tableau_de_bord.html` | Page générée (contient le VIN et la position) |
+| `data/`, `.env` | Les mêmes fichiers pour Docker, et l'adresse d'écoute du serveur |
 
 <br>
 
@@ -409,8 +451,13 @@ bmw-cardata-dashboard/
 ├── dashboard_template.html   # modèle du tableau de bord (HTML, CSS et JavaScript)
 ├── catalogue_bmw.json        # noms officiels en français des 294 données BMW CarData
 ├── requirements.txt          # paho-mqtt (streaming uniquement)
+├── Dockerfile                # image du conteneur (code seul)
+├── compose.yaml              # lancement avec Docker Compose, données dans data/
+├── .dockerignore             # liste blanche des fichiers de l'image
 ├── outils/
-│   └── captures_demo.py      # page de démonstration (données fictives) et captures du README
+│   ├── captures_demo.py      # page de démonstration (données fictives) et captures du README
+│   ├── deployer-lxc.ps1      # déploiement Docker sur un LXC Proxmox, depuis Windows
+│   └── installer-lxc.sh      # partie exécutée sur le serveur par deployer-lxc.ps1
 ├── docs/
 │   ├── banniere.svg
 │   └── captures/             # captures d'écran (données fictives)

@@ -14,6 +14,9 @@ voiture.png
 voiture.jpg
 # page générée (contient VIN et position)
 tableau_de_bord.html
+# données du conteneur Docker et adresse d'écoute
+data/
+.env
 
 # --- Fichiers temporaires ---
 # page de démonstration (outils/captures_demo.py)

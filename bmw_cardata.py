@@ -21,6 +21,7 @@ Une commande "status" coûte 1 appel (jusqu'à 3 quand la liste des données cha
 import base64
 import hashlib
 import json
+import os
 import secrets
 import sqlite3
 import sys
@@ -46,22 +47,27 @@ SCOPES_API = "authenticate_user openid cardata:api:read"
 SCOPES_FULL = SCOPES_API + " cardata:streaming:read"
 STREAM_HOST = "customer.streaming-cardata.bmwgroup.com"
 STREAM_PORT = 9000
-LIVE_PORT = 8765  # page locale « en direct » : http://127.0.0.1:8765
+# Page « en direct » : http://127.0.0.1:8765 par défaut. Dans Docker, BMW_LIVE_HOST=0.0.0.0.
+LIVE_HOST = os.environ.get("BMW_LIVE_HOST") or "127.0.0.1"
+LIVE_PORT = int(os.environ.get("BMW_LIVE_PORT") or 8765)
 
-# --- Fichiers locaux (dans le même dossier que ce script) -----------------------
+# --- Fichiers locaux ------------------------------------------------------------
+# Le code est à côté de ce script ; les données personnelles aussi, sauf si BMW_DATA_DIR
+# désigne un autre dossier (volume Docker, par exemple).
 HERE = Path(__file__).resolve().parent
-CONFIG_FILE = HERE / "config.json"            # client_id, VIN, id du conteneur
-TOKENS_FILE = HERE / "tokens.json"            # jetons d'accès : NE PAS PARTAGER
-LAST_FILE = HERE / "derniere_lecture.json"    # dernières données connues
-DASHBOARD_FILE = HERE / "tableau_de_bord.html"
-PROFILE_FILE = HERE / "profil_vehicule.json"  # modèle, motorisation... (récupéré une fois)
+DATA = Path(os.environ.get("BMW_DATA_DIR") or HERE).resolve()
+CONFIG_FILE = DATA / "config.json"            # client_id, VIN, id du conteneur
+TOKENS_FILE = DATA / "tokens.json"            # jetons d'accès : NE PAS PARTAGER
+LAST_FILE = DATA / "derniere_lecture.json"    # dernières données connues
+DASHBOARD_FILE = DATA / "tableau_de_bord.html"
+PROFILE_FILE = DATA / "profil_vehicule.json"  # modèle, motorisation... (récupéré une fois)
 TEMPLATE_FILE = HERE / "dashboard_template.html"
-STREAM_LOG = HERE / "historique_stream.jsonl"  # chaque message reçu en direct
+STREAM_LOG = DATA / "historique_stream.jsonl"  # chaque message reçu en direct
 CATALOGUE_FILE = HERE / "catalogue_bmw.json"   # noms officiels (en français) de toutes les données BMW
 CATALOGUE_URL = "https://www.bmw.fr/fr-fr/utilities/bmw/api/cd/catalogue?streamable=false&q=&category=&offset="
 STREAM_LOG_IN_PAGE = 800                       # nombre de messages repris dans la page
-HISTORY_DB = HERE / "historique.db"            # base SQLite : toutes les valeurs datées (streaming + status)
-API_LOG = HERE / "historique_lectures.jsonl"   # ancien journal des lectures « status », importé dans la base
+HISTORY_DB = DATA / "historique.db"            # base SQLite : toutes les valeurs datées (streaming + status)
+API_LOG = DATA / "historique_lectures.jsonl"   # ancien journal des lectures « status », importé dans la base
 HISTORY_MAX_POINTS = 1500                      # points gardés par courbe dans la page
 
 # Données suivies dans le temps (onglet « Historique »)
@@ -216,6 +222,10 @@ def load_json(path, default=None):
 def save_json(path, data):
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    try:
+        os.chmod(tmp, 0o600)  # lisible par vous seul (sans effet notable sous Windows)
+    except OSError:
+        pass
     tmp.replace(path)
 
 
@@ -717,7 +727,7 @@ def build_history(telematic):
 def render_dashboard(vin, telematic, fetched_at, fetched_iso=None, live=False, path=DASHBOARD_FILE):
     if not TEMPLATE_FILE.exists():
         die(f"Modèle de page introuvable : {TEMPLATE_FILE.name} (gardez-le à côté du script).")
-    image = next((p.name for p in sorted(HERE.glob("voiture.*"))), None)
+    image = next((p.name for p in sorted(DATA.glob("voiture.*"))), None)
     payload = {
         "vin": vin,
         "fetchedLabel": fetched_at,
@@ -797,9 +807,9 @@ def profile():
         with urllib.request.urlopen(req, timeout=30) as resp:
             ctype, raw = resp.headers.get("Content-Type", ""), resp.read()
         ext = ".jpg" if "jpeg" in ctype else ".png"
-        for old in HERE.glob("voiture.*"):
+        for old in DATA.glob("voiture.*"):
             old.unlink()
-        (HERE / f"voiture{ext}").write_bytes(raw)
+        (DATA / f"voiture{ext}").write_bytes(raw)
         print("Photo du véhicule enregistrée :", f"voiture{ext}")
     except urllib.error.HTTPError as e:
         print(f"Photo indisponible (HTTP {e.code}). Le tableau de bord utilisera un dessin à la place.")
@@ -847,7 +857,7 @@ class LiveState:
 def start_live_server():
     """Petit serveur local qui sert UNIQUEMENT la page, la photo et l'état « en direct »."""
     allowed = {"/": DASHBOARD_FILE, "/tableau_de_bord.html": DASHBOARD_FILE}
-    for p in HERE.glob("voiture.*"):
+    for p in DATA.glob("voiture.*"):
         allowed["/" + p.name] = p
 
     class Handler(BaseHTTPRequestHandler):
@@ -888,11 +898,11 @@ def start_live_server():
 
     for port in range(LIVE_PORT, LIVE_PORT + 10):
         try:
-            server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            server = ThreadingHTTPServer((LIVE_HOST, port), Handler)
         except OSError:
             continue
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        return f"http://127.0.0.1:{port}/"
+        return f"http://{LIVE_HOST}:{port}/"
     return None
 
 

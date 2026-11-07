@@ -1,0 +1,17 @@
+# docker compose up -d --build
+# Adresse et port de la page : variables BMW_BIND et BMW_PORT (fichier .env à côté).
+# Par défaut, la page n'est accessible que depuis la machine elle-même (127.0.0.1).
+services:
+  bmw-cardata:
+    build: .
+    image: bmw-cardata:local
+    container_name: bmw-cardata
+    restart: unless-stopped
+    ports:
+      - "${BMW_BIND:-127.0.0.1}:${BMW_PORT:-8765}:8765"
+    volumes:
+      - ./data:/data
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"

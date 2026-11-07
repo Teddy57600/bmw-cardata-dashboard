@@ -29,7 +29,7 @@ def build_page():
         old.unlink()
     for photo in PROJ.glob("voiture.*"):
         shutil.copy(photo, OUT / photo.name)
-    b.HERE = OUT
+    b.DATA = OUT
     b.PROFILE_FILE = OUT / "profil.json"
     b.STREAM_LOG = OUT / "historique.jsonl"
     b.API_LOG = OUT / "lectures.jsonl"

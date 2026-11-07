@@ -1,0 +1,6 @@
+# Liste blanche : seul le code entre dans l'image, jamais les données personnelles.
+*
+!bmw_cardata.py
+!dashboard_template.html
+!catalogue_bmw.json
+!requirements.txt
