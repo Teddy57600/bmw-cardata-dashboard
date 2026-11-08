@@ -159,6 +159,24 @@ body {
   background: linear-gradient(180deg, rgba(7,9,12,.85), transparent 28%, transparent 70%, rgba(7,9,12,.9)); }
 .map .lmap { position: absolute; inset: 0; z-index: 0; background: #0b0f15; font: inherit; }
 .map .leaflet-top.leaflet-right { top: 50%; transform: translateY(-50%); }
+/* onglet Trajets */
+.trips-card { display: grid; grid-template-columns: 320px 1fr; gap: 18px; padding: 18px; }
+.trips-list { display: flex; flex-direction: column; min-height: 0; max-height: 620px; }
+#tripsList { overflow: auto; margin: 0 -6px; padding: 0 6px; }
+.trips-map { min-height: 620px; border-radius: 12px; overflow: hidden; }
+.trips-map::after { display: none; }
+.trips-map .leaflet-top.leaflet-right { top: 0; transform: none; }
+.trip-day { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; margin: 14px 0 4px; }
+.trip { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; width: 100%; text-align: left; padding: 9px 10px; margin: 2px 0;
+  border: 1px solid transparent; border-radius: 10px; background: none; color: var(--text); font: inherit; font-size: 13.5px; cursor: pointer; }
+.trip:hover { background: rgba(255,255,255,.04); }
+.trip[aria-selected="true"] { background: rgba(61,139,255,.12); border-color: rgba(61,139,255,.45); }
+.trip .km { font-weight: 600; }
+.trip .sub { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.trip-end { width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; border: 3px solid #fff; }
+.trip-end.a { background: var(--ok); } .trip-end.b { background: var(--bad); }
+.trips-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+@media (max-width: 900px) { .trips-card { grid-template-columns: 1fr; } .trips-list { max-height: 340px; } .trips-map { min-height: 420px; } }
 .map .leaflet-bar { border: 1px solid rgba(255,255,255,.12) !important; border-radius: 10px; overflow: hidden; box-shadow: none !important; }
 .map .leaflet-bar a { background: rgba(14,18,24,.85); color: #dfe6ef; border-bottom-color: rgba(255,255,255,.1); }
 .map .leaflet-bar a:hover { background: rgba(30,38,50,.95); color: #fff; }
@@ -386,6 +404,7 @@ footer { color: var(--faint); font-size: 12px; text-align: center; padding: 34px
     <a href="#entretien" data-p="entretien">Entretien &amp; alertes <span class="badge" id="alertBadge" hidden></span></a>
     <a href="#conduite" data-p="conduite">Conduite &amp; conso</a>
     <a href="#historique" data-p="historique">Historique</a>
+    <a href="#trajets" data-p="trajets">Trajets</a>
     <a href="#donnees" data-p="donnees">Toutes les données</a>
     <a href="#flux" data-p="flux"><span class="live-dot" id="fluxDot"></span>Flux en direct <span class="badge" id="fluxBadge" hidden></span></a>
   </nav>
@@ -516,6 +535,17 @@ footer { color: var(--faint); font-size: 12px; text-align: center; padding: 34px
       </div>
     </article></div>
     <div class="grid g-2" id="histoGrid"></div>
+  </section>
+
+  <section class="panel" id="p-trajets">
+    <div class="grid"><article class="card trips-card">
+      <div class="trips-list">
+        <h2 style="margin-bottom:6px">Trajets</h2>
+        <div class="hint" id="tripsHint" style="margin:0 0 10px"></div>
+        <div id="tripsList" role="listbox" aria-label="Trajets"></div>
+      </div>
+      <div class="map trips-map" id="tripsMap"></div>
+    </article></div>
   </section>
 
   <section class="panel" id="p-donnees">
@@ -829,6 +859,21 @@ function countUp(el, to, dur) {
   ageTag($("bodyAge"), "vehicle.cabin.door.lock.status");
 })();
 
+/* Leaflet, chargé une seule fois pour toutes les cartes de la page */
+let leafletPromise = null;
+function loadLeaflet() {
+  return leafletPromise || (leafletPromise = new Promise((ok, ko) => {
+    const css = document.createElement("link");
+    css.rel = "stylesheet"; css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    css.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="; css.crossOrigin = "";
+    const js = document.createElement("script");
+    js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    js.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="; js.crossOrigin = "";
+    js.onload = () => ok(window.L); js.onerror = ko;
+    document.head.append(css, js);
+  }));
+}
+
 /* ---------------- carte ---------------- */
 (() => {
   const lat = num(LAT), lon = num(LON);
@@ -867,17 +912,7 @@ function countUp(el, to, dur) {
     new ResizeObserver(() => map.invalidateSize()).observe($("map"));
   };
   if (location.protocol === "file:") { fallback(); }
-  else {
-  const css = document.createElement("link");
-  css.rel = "stylesheet"; css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-  css.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="; css.crossOrigin = "";
-  const js = document.createElement("script");
-  js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-  js.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="; js.crossOrigin = "";
-  js.onload = () => { try { draw(); } catch (e) { fallback(); } };
-  js.onerror = fallback;
-  document.head.append(css, js);
-  }
+  else loadLeaflet().then(() => { try { draw(); } catch (e) { fallback(); } }, fallback);
   $("coords").textContent = `${lat.toFixed(5)}° N · ${lon.toFixed(5)}° E`;
   $("osmLink").href = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
   $("gmapsLink").href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
@@ -1695,9 +1730,77 @@ function fluxValue(k, e) {
   let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(drawAll, 120); });
 })();
 
+/* ================= trajets ================= */
+(() => {
+  const trips = (DATA.trips || []).slice().reverse();  // le plus récent en premier
+  const list = $("tripsList"), box = $("tripsMap");
+  const hour = d => d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const dur = (a, b) => { const m = Math.max(1, Math.round((b - a) / 60000)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`; };
+  trips.forEach(t => { t.a = new Date(t.start); t.b = new Date(t.end); });
+  if (!trips.length) {
+    $("tripsHint").textContent = "Aucun trajet enregistré pour l'instant.";
+    box.innerHTML = '<div class="trips-empty">Les trajets apparaîtront ici dès que la voiture aura roulé avec le flux en direct actif (commande stream).</div>';
+    window.drawTrips = () => {};
+    return;
+  }
+  const total = trips.reduce((s, t) => s + (t.km || 0), 0);
+  const first = trips[trips.length - 1].a;
+  $("tripsHint").textContent = `${fmt(trips.length)} trajet${trips.length > 1 ? "s" : ""} · ${fmt(total)} km depuis le ${first.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}. Tracé approximatif : la voiture envoie sa position environ toutes les 3 minutes.`;
+  let html = `<button type="button" class="trip" role="option" data-i="-1" aria-selected="true"><span>Tous les trajets</span><span class="km">${fmt(total)} km</span></button>`, day = "";
+  trips.forEach((t, i) => {
+    const d = t.a.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+    if (d !== day) { html += `<div class="trip-day">${esc(d)}</div>`; day = d; }
+    html += `<button type="button" class="trip" role="option" data-i="${i}" aria-selected="false"><span>${hour(t.a)} → ${hour(t.b)}</span><span class="km">${fmt(t.km)} km</span><span class="sub">${dur(t.a, t.b)}</span></button>`;
+  });
+  list.innerHTML = html;
+
+  let map = null, lines = [], ends = null, sel = -1;
+  const select = i => {
+    sel = i;
+    list.querySelectorAll(".trip").forEach(b => b.setAttribute("aria-selected", String(+b.dataset.i === i)));
+    if (!map) return;
+    const L = window.L;
+    lines.forEach((l, j) => l.setStyle(i < 0 ? { color: "#3d8bff", opacity: .75, weight: 3 }
+      : j === i ? { color: "#3d8bff", opacity: 1, weight: 5 } : { color: "#8a94a3", opacity: .25, weight: 2 }));
+    if (ends) { ends.remove(); ends = null; }
+    if (i >= 0) {
+      lines[i].bringToFront();
+      const p = trips[i].pts;
+      ends = L.layerGroup([
+        L.marker(p[0], { icon: L.divIcon({ className: "trip-end a", iconSize: [14, 14] }), title: `Départ ${hour(trips[i].a)}`, keyboard: false }),
+        L.marker(p[p.length - 1], { icon: L.divIcon({ className: "trip-end b", iconSize: [14, 14] }), title: `Arrivée ${hour(trips[i].b)}`, keyboard: false }),
+      ]).addTo(map);
+      map.fitBounds(lines[i].getBounds(), { padding: [40, 40], maxZoom: 16 });
+    } else map.fitBounds(L.featureGroup(lines).getBounds(), { padding: [30, 30], maxZoom: 15 });
+  };
+  list.addEventListener("click", e => { const b = e.target.closest(".trip"); if (b) select(+b.dataset.i); });
+
+  const draw = L => {
+    box.innerHTML = '<div class="lmap" role="region" aria-label="Carte des trajets"></div>';
+    map = L.map(box.firstChild, { zoomControl: false, attributionControl: false });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+    L.control.zoom({ position: "topright", zoomInTitle: "Zoom avant", zoomOutTitle: "Zoom arrière" }).addTo(map);
+    L.control.attribution({ position: "bottomright", prefix: false })
+      .addAttribution('© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>').addTo(map);
+    lines = trips.map((t, i) => L.polyline(t.pts, { lineJoin: "round" }).on("click", () => select(i)).addTo(map));
+    new ResizeObserver(() => map.invalidateSize()).observe(box);
+    select(sel);
+  };
+  let started = false;
+  window.drawTrips = () => {  // la carte n'est créée qu'à l'ouverture de l'onglet (elle doit être visible)
+    if (started) { if (map) map.invalidateSize(); return; }
+    started = true;
+    if (location.protocol === "file:") {
+      box.innerHTML = '<div class="trips-empty">La carte des trajets s\'affiche sur la page servie par la commande stream (OpenStreetMap refuse ses fonds de carte à une page ouverte comme fichier).</div>';
+      return;
+    }
+    loadLeaflet().then(draw, () => { box.innerHTML = '<div class="trips-empty">Impossible de charger la carte (pas d\'accès à Internet ?).</div>'; });
+  };
+})();
+
 /* ================= navigation par onglets ================= */
 (() => {
-  const ids = ["apercu", "entretien", "conduite", "historique", "donnees", "flux"];
+  const ids = ["apercu", "entretien", "conduite", "historique", "trajets", "donnees", "flux"];
   let current = null;
   const show = () => {
     const id = ids.includes(location.hash.slice(1)) ? location.hash.slice(1) : "apercu";
@@ -1711,6 +1814,7 @@ function fluxValue(k, e) {
     if (id === "apercu" && current && current !== "apercu") replayOverview();
     if (id === "flux") { const b = $("fluxBadge"); b.hidden = true; b.textContent = ""; window.__fluxUnseen = 0; }
     if (id === "historique" && window.drawHistory) window.drawHistory();
+    if (id === "trajets" && window.drawTrips) window.drawTrips();
     current = id;
   };
   window.addEventListener("hashchange", () => { show(); const t = $("tabs"); if (t.getBoundingClientRect().top < 0 || scrollY > t.offsetTop) scrollTo({ top: t.offsetTop, behavior: "smooth" }); });

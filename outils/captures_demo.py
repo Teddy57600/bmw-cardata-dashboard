@@ -15,7 +15,7 @@ PROJ = Path(__file__).resolve().parent.parent
 OUT = PROJ / "demo"
 CAPTURES = PROJ / "docs" / "captures"
 # onglet → hauteur de la capture (largeur 1440 px)
-SHOTS = {"apercu": 845, "entretien": 1180, "conduite": 1100, "historique": 1960, "flux": 1250}
+SHOTS = {"apercu": 845, "entretien": 1180, "conduite": 1100, "historique": 1960, "trajets": 1240, "flux": 1250}
 EDGE = [Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
         Path(r"C:\Program Files\Microsoft\Edge\Application\msedge.exe")]
 
@@ -137,6 +137,32 @@ def build_page():
                  "vehicle.cabin.hvac.statusAirPurification": e("INACTIVE")}
         for k, v in extra.items():
             f.write(json.dumps({"received": (now - timedelta(minutes=2)).isoformat(), "data": {k: v}}) + "\n")
+
+    # ---- trajets fictifs autour de Munich (onglet Trajets), un point toutes les 3 min environ ----
+    home = (48.17680, 11.55600)
+    places = [(48.13740, 11.57550), (48.15050, 11.59170), (48.21800, 11.62400), (48.13300, 11.50400),
+              (48.10600, 11.55900), (48.24900, 11.65200), (48.16350, 11.49500)]
+    trips, day = [], now - timedelta(days=9)
+    for n in range(14):
+        dest = places[n % len(places)]
+        start = (day + timedelta(days=n // 2 + 1)).replace(hour=8 if n % 2 == 0 else 17, minute=random.randint(0, 50))
+        a, b_ = (home, dest) if n % 2 == 0 else (dest, home)
+        # chemin sinueux : points intermédiaires décalés de part et d'autre de la ligne droite
+        dx, dy = b_[0] - a[0], b_[1] - a[1]
+        path, pts = [a], []
+        for f in (.2, .4, .6, .8):
+            off = random.uniform(-.12, .12)
+            path.append((a[0] + dx * f - dy * off * .66, a[1] + dy * f + dx * off * 1.5))
+        path.append(b_)
+        for p, q in zip(path, path[1:]):
+            steps = max(1, int(b._km(p, q) / 1.8))
+            pts += [(p[0] + (q[0] - p[0]) * s / steps + random.uniform(-.0008, .0008),
+                     p[1] + (q[1] - p[1]) * s / steps + random.uniform(-.0008, .0008)) for s in range(steps)]
+        pts += [b_]
+        km = sum(b._km(p, q) for p, q in zip(pts, pts[1:])) * 1.15
+        trips.append({"start": iso(start), "end": iso(start + timedelta(minutes=3 * len(pts))), "km": round(km),
+                      "pts": [[round(x, 5), round(y, 5)] for x, y in pts]})
+    b.build_trips = lambda telematic: trips
 
     page = OUT / "demo.html"
     b.render_dashboard("WBA00000000DEMO00", T, now.astimezone().strftime("%d/%m/%Y %H:%M"), iso(now), path=page)

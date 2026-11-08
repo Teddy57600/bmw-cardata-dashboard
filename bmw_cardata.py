@@ -19,8 +19,10 @@ Une commande "status" coûte 1 appel (jusqu'à 3 quand la liste des données cha
 """
 
 import base64
+import bisect
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -680,6 +682,81 @@ def save_history(data, source, received=None):
         print(f"Base {HISTORY_DB.name} : écriture impossible ({e}).")
 
 
+TRIPS_MAX = 300           # trajets gardés dans la page (les plus récents)
+TRIP_STOP_S = 300         # immobile plus de 5 min : le trajet est terminé
+TRIP_MOVE_KM = 0.1        # déplacement minimal entre deux positions pour compter comme « roule »
+
+
+def _km(a, b):
+    """Distance approchée (km) entre deux points (lat, lon) proches."""
+    x = math.radians(b[1] - a[1]) * math.cos(math.radians((a[0] + b[0]) / 2))
+    y = math.radians(b[0] - a[0])
+    return 6371 * math.hypot(x, y)
+
+
+def build_trips(telematic):
+    """Découpe l'historique des positions en trajets. Pendant la conduite, la voiture envoie sa
+    position environ toutes les 3 minutes : un trajet est donc une suite de points reliés en ligne
+    droite, pas le tracé exact de la route. Renvoie [{start, end, km, pts: [[lat, lon], ...]}]."""
+    lat_k = "vehicle.cabin.infotainment.navigation.currentLocation.latitude"
+    lon_k = "vehicle.cabin.infotainment.navigation.currentLocation.longitude"
+    odo_k = "vehicle.vehicle.travelledDistance"
+    series = {lat_k: {}, lon_k: {}, odo_k: {}}
+    try:
+        with closing(open_db()) as db:
+            for k, ts, t, v in db.execute("SELECT cle, horodatage, t, valeur FROM mesures WHERE cle IN (?, ?, ?)",
+                                          (lat_k, lon_k, odo_k)):
+                if isinstance(v, (int, float)):
+                    series[k][t] = v
+    except sqlite3.Error as e:
+        print(f"Base {HISTORY_DB.name} : lecture impossible ({e}).")
+        return []
+    for k in series:
+        e = (telematic or {}).get(k)
+        dt = parse_time(e.get("timestamp")) if isinstance(e, dict) else None
+        if dt:
+            try:
+                series[k][dt.timestamp()] = float(e.get("value"))
+            except (TypeError, ValueError):
+                pass
+    odo = sorted(series[odo_k].items())
+    odo_t = [t for t, _ in odo]
+
+    def odo_at(t):  # dernier kilométrage connu à l'instant t
+        i = bisect.bisect_right(odo_t, t)
+        return odo[i - 1][1] if i else None
+
+    pts = [(t, series[lat_k][t], series[lon_k][t]) for t in sorted(set(series[lat_k]) & set(series[lon_k]))
+           if -90 <= series[lat_k][t] <= 90 and -180 <= series[lon_k][t] <= 180
+           and (series[lat_k][t], series[lon_k][t]) != (0, 0)]
+    trips, cur, last_move = [], None, None
+
+    def close():
+        if cur and (cur["dist"] >= 0.3 or (cur["km1"] or 0) - (cur["km0"] or 0) >= 1):
+            trips.append(cur)
+
+    for i in range(1, len(pts)):
+        (t0, a0, b0), (t1, a1, b1) = pts[i - 1], pts[i]
+        o0, o1 = odo_at(t0), odo_at(t1)
+        moved = _km((a0, b0), (a1, b1)) > TRIP_MOVE_KM or (o0 is not None and o1 is not None and o1 > o0)
+        if cur and last_move is not None and t1 - last_move > TRIP_STOP_S and (not moved or t1 - last_move > 1800):
+            close()
+            cur = None
+        if moved:
+            if cur is None:
+                cur = {"t0": t0, "pts": [(a0, b0)], "dist": 0.0, "km0": o0}
+            cur["dist"] += _km(cur["pts"][-1], (a1, b1))
+            cur["pts"].append((a1, b1))
+            cur["t1"], cur["km1"] = t1, o1
+            last_move = t1
+    close()
+    iso = lambda t: datetime.fromtimestamp(t, timezone.utc).isoformat()
+    out = [{"start": iso(tr["t0"]), "end": iso(tr["t1"]),
+            "km": round(tr["km1"] - tr["km0"]) if tr["km0"] is not None and tr["km1"] is not None else round(tr["dist"]),
+            "pts": [[round(a, 5), round(b, 5)] for a, b in tr["pts"]]} for tr in trips]
+    return out[-TRIPS_MAX:]
+
+
 REFUEL_MIN_RISE = 10  # hausse du niveau (points de %) qui signale un plein
 
 
@@ -810,6 +887,7 @@ def render_dashboard(vin, telematic, fetched_at, fetched_iso=None, live=False, p
         "catalogue": {k: v.get("name") for k, v in (load_json(CATALOGUE_FILE, {}) or {}).items()},
         "streamLog": list(LiveState.log)[-STREAM_LOG_IN_PAGE:] if live else read_stream_history(),
         "history": build_history(telematic),
+        "trips": build_trips(telematic),
         "sinceRefuel": since_refuel(telematic, (load_json(CONFIG_FILE, {}) or {}).get("tank_liters")),
         "live": live,
     }

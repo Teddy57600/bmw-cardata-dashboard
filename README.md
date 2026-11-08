@@ -80,7 +80,7 @@ Chaque valeur reçue est rangée dans `historique.db`, que vous pouvez interroge
 <td width="50%" valign="top">
 
 ### 🖥️ Tableau de bord élégant
-Thème sombre, jauge animée, compteur à rouleaux, vue de dessus de la voiture, carte, graphiques d'historique, six onglets. Fonctionne aussi sur téléphone.
+Thème sombre, jauge animée, compteur à rouleaux, vue de dessus de la voiture, carte, graphiques d'historique, carte des trajets, sept onglets. Fonctionne aussi sur téléphone.
 
 ### 🔎 Flux brut consultable
 Un onglet affiche **chaque message MQTT reçu**, avec les noms officiels BMW en français, même pour les données que le tableau de bord n'affiche pas.
@@ -112,6 +112,12 @@ Un seul script Python, sans dépendance externe pour l'usage courant. Seul le st
 **Historique**
 
 <img src="docs/captures/historique.png" alt="Onglet Historique : graphiques du carburant, de l'autonomie, des kilomètres par jour, du kilométrage, des pneus et de la batterie 12 V" width="100%">
+
+<br><br>
+
+**Trajets**
+
+<img src="docs/captures/trajets.png" alt="Onglet Trajets : liste des trajets par jour et carte de leurs tracés" width="100%">
 
 <br><br>
 
@@ -302,6 +308,7 @@ Avec `-AvecDonnees`, les données déjà présentes sur le serveur sont mises de
 | **Entretien & alertes** | Voyants Check Control, entretien détaillé (huile, liquide de frein…), échéances, batteries, alarme, mémoire des défauts |
 | **Conduite & conso** | Consommation moyenne réelle (compteur officiel OBFCM), [consommation depuis le dernier plein](#conso-plein) (estimée), habitudes de conduite, cap et altitude, moteur, navigation, programmateurs de clim |
 | **Historique** | Graphiques sur 7, 30 ou 90 jours : carburant, autonomie, kilomètres par jour, kilométrage, pression des pneus, batterie 12 V. Valeurs au survol, et tableau des valeurs sous chaque graphique |
+| **Trajets** | Les trajets reconstitués à partir des positions enregistrées, classés par jour (horaires, kilomètres, durée), et leur tracé sur une carte. Un clic sur un trajet le met en évidence, avec son départ et son arrivée. Pendant la conduite, la voiture envoie sa position environ toutes les 3 minutes : le tracé relie ces points en ligne droite et ne suit pas exactement la route. Un trajet se termine quand la voiture reste immobile plus de 5 minutes. La carte s'affiche sur la page servie par `stream` |
 | **Toutes les données** | La liste complète des valeurs connues, avec une recherche. Un clic sur une ligne déplie **toutes ses valeurs passées**, lues dans la [base](#base-historique) : une ligne par changement, les valeurs identiques qui se suivent étant regroupées (page en direct seulement ; une page ouverte comme fichier ne montre que les courbes de l'onglet Historique) |
 | **Flux en direct** | Chaque message MQTT reçu, regroupé par rafale, avec filtre, pause et repérage des données « hors tableau » |
 
