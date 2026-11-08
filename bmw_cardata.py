@@ -702,11 +702,12 @@ def build_trips(telematic):
     lat_k = "vehicle.cabin.infotainment.navigation.currentLocation.latitude"
     lon_k = "vehicle.cabin.infotainment.navigation.currentLocation.longitude"
     odo_k = "vehicle.vehicle.travelledDistance"
-    series = {lat_k: {}, lon_k: {}, odo_k: {}}
+    lvl_k = "vehicle.drivetrain.fuelSystem.level"
+    series = {lat_k: {}, lon_k: {}, odo_k: {}, lvl_k: {}}
     try:
         with closing(open_db()) as db:
-            for k, ts, t, v in db.execute("SELECT cle, horodatage, t, valeur FROM mesures WHERE cle IN (?, ?, ?)",
-                                          (lat_k, lon_k, odo_k)):
+            for k, ts, t, v in db.execute("SELECT cle, horodatage, t, valeur FROM mesures WHERE cle IN (?, ?, ?, ?)",
+                                          (lat_k, lon_k, odo_k, lvl_k)):
                 if isinstance(v, (int, float)):
                     series[k][t] = v
     except sqlite3.Error as e:
@@ -751,9 +752,20 @@ def build_trips(telematic):
             cur["t1"], cur["km1"] = t1, o1
             last_move = t1
     close()
+    # carburant consommé : baisse du niveau du réservoir (en %) entre le départ et l'arrivée.
+    # Le niveau n'est connu qu'au % près : c'est une estimation à ± 1 point.
+    lvl = sorted(series[lvl_k].items())
+    lvl_t = [t for t, _ in lvl]
+    for n, tr in enumerate(trips):
+        i = bisect.bisect_right(lvl_t, tr["t0"] + 60)  # dernier niveau connu au départ
+        limit = min(tr["t1"] + 1800, trips[n + 1]["t0"] if n + 1 < len(trips) else float("inf"))
+        j = bisect.bisect_right(lvl_t, limit)  # dernier niveau après l'arrivée, avant le trajet suivant
+        if i and j and lvl_t[j - 1] >= tr["t1"] - 60:
+            tr["fuelPct"] = max(0, lvl[i - 1][1] - lvl[j - 1][1])
     iso = lambda t: datetime.fromtimestamp(t, timezone.utc).isoformat()
     out = [{"start": iso(tr["t0"]), "end": iso(tr["t1"]),
             "km": round(tr["km1"] - tr["km0"]) if tr["km0"] is not None and tr["km1"] is not None else round(tr["dist"]),
+            "fuelPct": tr.get("fuelPct"),
             "pts": [[round(a, 5), round(b, 5), int(t)] for a, b, t in tr["pts"]]} for tr in trips]
     return out[-TRIPS_MAX:]
 
@@ -889,6 +901,7 @@ def render_dashboard(vin, telematic, fetched_at, fetched_iso=None, live=False, p
         "streamLog": list(LiveState.log)[-STREAM_LOG_IN_PAGE:] if live else read_stream_history(),
         "history": build_history(telematic),
         "trips": build_trips(telematic),
+        "tankLiters": (load_json(CONFIG_FILE, {}) or {}).get("tank_liters"),
         "sinceRefuel": since_refuel(telematic, (load_json(CONFIG_FILE, {}) or {}).get("tank_liters")),
         "live": live,
     }

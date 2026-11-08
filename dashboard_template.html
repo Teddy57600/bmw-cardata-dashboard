@@ -1737,6 +1737,16 @@ function fluxValue(k, e) {
   const hour = d => d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const dur = (a, b) => { const m = Math.max(1, Math.round((b - a) / 60000)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`; };
   trips.forEach(t => { t.a = new Date(t.start); t.b = new Date(t.end); });
+  /* carburant du trajet : baisse du niveau du réservoir, connu au % près (≈ 0,5 L pour 49 L).
+     Litres arrondis au demi-litre ; L/100 km seulement à partir de 20 km, sinon la marge est trop grande. */
+  const tank = DATA.tankLiters;
+  const fuelText = t => {
+    if (t.fuelPct == null || !tank) return "";
+    const l = t.fuelPct / 100 * tank, step = Math.round(l * 2) / 2;
+    const txt = step < .5 ? "< 0,5 L" : `≈ ${fmt(step, step % 1 ? 1 : 0)} L`;
+    const per = t.km >= 20 && l > 0 ? ` (≈ ${fmt(l / t.km * 100, 1)} L/100)` : "";
+    return ` · <span title="Estimé d'après le niveau du réservoir, connu au % près : ± ${fmt(tank / 100, 1)} L">${txt}${per}</span>`;
+  };
   if (!trips.length) {
     $("tripsHint").textContent = "Aucun trajet enregistré pour l'instant.";
     box.innerHTML = '<div class="trips-empty">Les trajets apparaîtront ici dès que la voiture aura roulé avec le flux en direct actif (commande stream).</div>';
@@ -1750,7 +1760,7 @@ function fluxValue(k, e) {
   trips.forEach((t, i) => {
     const d = t.a.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
     if (d !== day) { html += `<div class="trip-day">${esc(d)}</div>`; day = d; }
-    html += `<button type="button" class="trip" role="option" data-i="${i}" aria-selected="false"><span>${hour(t.a)} → ${hour(t.b)}</span><span class="km">${fmt(t.km)} km</span><span class="sub">${dur(t.a, t.b)}</span></button>`;
+    html += `<button type="button" class="trip" role="option" data-i="${i}" aria-selected="false"><span>${hour(t.a)} → ${hour(t.b)}</span><span class="km">${fmt(t.km)} km</span><span class="sub">${dur(t.a, t.b)}${fuelText(t)}</span></button>`;
   });
   list.innerHTML = html;
 

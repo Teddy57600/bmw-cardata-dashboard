@@ -162,6 +162,7 @@ def build_page():
         km = sum(b._km(p, q) for p, q in zip(pts, pts[1:])) * 1.15
         t0 = start.timestamp()
         trips.append({"start": iso(start), "end": iso(start + timedelta(minutes=3 * (len(pts) - 1))), "km": round(km),
+                      "fuelPct": round(km * random.uniform(.09, .14)),  # % du réservoir de 49 L
                       "pts": [[round(x, 5), round(y, 5), int(t0 + 180 * i)] for i, (x, y) in enumerate(pts)]})
     b.build_trips = lambda telematic: trips
 
