@@ -697,7 +697,8 @@ def _km(a, b):
 def build_trips(telematic):
     """Découpe l'historique des positions en trajets. Pendant la conduite, la voiture envoie sa
     position environ toutes les 3 minutes : un trajet est donc une suite de points reliés en ligne
-    droite, pas le tracé exact de la route. Renvoie [{start, end, km, pts: [[lat, lon], ...]}]."""
+    droite, pas le tracé exact de la route.
+    Renvoie [{start, end, km, pts: [[lat, lon, heure Unix], ...]}]."""
     lat_k = "vehicle.cabin.infotainment.navigation.currentLocation.latitude"
     lon_k = "vehicle.cabin.infotainment.navigation.currentLocation.longitude"
     odo_k = "vehicle.vehicle.travelledDistance"
@@ -744,16 +745,16 @@ def build_trips(telematic):
             cur = None
         if moved:
             if cur is None:
-                cur = {"t0": t0, "pts": [(a0, b0)], "dist": 0.0, "km0": o0}
+                cur = {"t0": t0, "pts": [(a0, b0, t0)], "dist": 0.0, "km0": o0}
             cur["dist"] += _km(cur["pts"][-1], (a1, b1))
-            cur["pts"].append((a1, b1))
+            cur["pts"].append((a1, b1, t1))
             cur["t1"], cur["km1"] = t1, o1
             last_move = t1
     close()
     iso = lambda t: datetime.fromtimestamp(t, timezone.utc).isoformat()
     out = [{"start": iso(tr["t0"]), "end": iso(tr["t1"]),
             "km": round(tr["km1"] - tr["km0"]) if tr["km0"] is not None and tr["km1"] is not None else round(tr["dist"]),
-            "pts": [[round(a, 5), round(b, 5)] for a, b in tr["pts"]]} for tr in trips]
+            "pts": [[round(a, 5), round(b, 5), int(t)] for a, b, t in tr["pts"]]} for tr in trips]
     return out[-TRIPS_MAX:]
 
 

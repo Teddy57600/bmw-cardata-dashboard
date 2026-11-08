@@ -160,8 +160,9 @@ def build_page():
                      p[1] + (q[1] - p[1]) * s / steps + random.uniform(-.0008, .0008)) for s in range(steps)]
         pts += [b_]
         km = sum(b._km(p, q) for p, q in zip(pts, pts[1:])) * 1.15
-        trips.append({"start": iso(start), "end": iso(start + timedelta(minutes=3 * len(pts))), "km": round(km),
-                      "pts": [[round(x, 5), round(y, 5)] for x, y in pts]})
+        t0 = start.timestamp()
+        trips.append({"start": iso(start), "end": iso(start + timedelta(minutes=3 * (len(pts) - 1))), "km": round(km),
+                      "pts": [[round(x, 5), round(y, 5), int(t0 + 180 * i)] for i, (x, y) in enumerate(pts)]})
     b.build_trips = lambda telematic: trips
 
     page = OUT / "demo.html"

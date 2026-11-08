@@ -1754,7 +1754,7 @@ function fluxValue(k, e) {
   });
   list.innerHTML = html;
 
-  let map = null, lines = [], ends = null, sel = -1;
+  let map = null, lines = [], dots = [], ends = null, sel = -1;
   const select = i => {
     sel = i;
     list.querySelectorAll(".trip").forEach(b => b.setAttribute("aria-selected", String(+b.dataset.i === i)));
@@ -1762,6 +1762,12 @@ function fluxValue(k, e) {
     const L = window.L;
     lines.forEach((l, j) => l.setStyle(i < 0 ? { color: "#3d8bff", opacity: .75, weight: 3 }
       : j === i ? { color: "#3d8bff", opacity: 1, weight: 5 } : { color: "#8a94a3", opacity: .25, weight: 2 }));
+    // un petit marqueur par position GPS reçue (masqués sur les trajets non sélectionnés)
+    dots.forEach((g, j) => {
+      const on = i < 0 || j === i;
+      if (on && !map.hasLayer(g)) g.addTo(map); else if (!on && map.hasLayer(g)) g.remove();
+      if (on) g.eachLayer(m => m.setRadius(i < 0 ? 2.5 : 4));
+    });
     if (ends) { ends.remove(); ends = null; }
     if (i >= 0) {
       lines[i].bringToFront();
@@ -1770,8 +1776,14 @@ function fluxValue(k, e) {
         L.marker(p[0], { icon: L.divIcon({ className: "trip-end a", iconSize: [14, 14] }), title: `Départ ${hour(trips[i].a)}`, keyboard: false }),
         L.marker(p[p.length - 1], { icon: L.divIcon({ className: "trip-end b", iconSize: [14, 14] }), title: `Arrivée ${hour(trips[i].b)}`, keyboard: false }),
       ]).addTo(map);
-      map.fitBounds(lines[i].getBounds(), { padding: [40, 40], maxZoom: 16 });
-    } else map.fitBounds(L.featureGroup(lines).getBounds(), { padding: [30, 30], maxZoom: 15 });
+    }
+    fit();
+  };
+  // cadre la carte sur le trajet sélectionné, ou sur tous les trajets
+  const fit = () => {
+    if (!map) return;
+    if (sel >= 0) map.fitBounds(lines[sel].getBounds(), { padding: [40, 40], maxZoom: 16 });
+    else map.fitBounds(window.L.featureGroup(lines).getBounds(), { padding: [30, 30], maxZoom: 15 });
   };
   list.addEventListener("click", e => { const b = e.target.closest(".trip"); if (b) select(+b.dataset.i); });
 
@@ -1780,9 +1792,26 @@ function fluxValue(k, e) {
     map = L.map(box.firstChild, { zoomControl: false, attributionControl: false });
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
     L.control.zoom({ position: "topright", zoomInTitle: "Zoom avant", zoomOutTitle: "Zoom arrière" }).addTo(map);
+    const Reset = L.Control.extend({ onAdd() {  // revient au cadrage d'origine après un zoom ou un déplacement
+      const bar = L.DomUtil.create("div", "leaflet-bar");
+      const a = L.DomUtil.create("a", "", bar);
+      a.href = "#"; a.title = "Réinitialiser le zoom"; a.setAttribute("role", "button"); a.setAttribute("aria-label", "Réinitialiser le zoom");
+      a.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align:-3px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+      L.DomEvent.disableClickPropagation(bar);
+      L.DomEvent.on(a, "click", e => { L.DomEvent.preventDefault(e); fit(); });
+      return bar;
+    } });
+    new Reset({ position: "topright" }).addTo(map);
     L.control.attribution({ position: "bottomright", prefix: false })
       .addAttribution('© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>').addTo(map);
-    lines = trips.map((t, i) => L.polyline(t.pts, { lineJoin: "round" }).on("click", () => select(i)).addTo(map));
+    lines = trips.map((t, i) => L.polyline(t.pts.map(p => [p[0], p[1]]), { lineJoin: "round" }).on("click", () => select(i)).addTo(map));
+    const canvas = L.canvas({ padding: .5, tolerance: 6 });
+    dots = trips.map((t, i) => L.layerGroup(t.pts.map((p, k) => {
+      const when = p[2] ? hour(new Date(p[2] * 1000)) : "";
+      return L.circleMarker([p[0], p[1]], { renderer: canvas, radius: 2.5, color: "#0b0f15", weight: 1.5, fillColor: "#dfe9ff", fillOpacity: 1 })
+        .bindTooltip(`${when ? when + " · " : ""}point ${k + 1} / ${t.pts.length}`, { direction: "top", offset: [0, -4] })
+        .on("click", () => select(i));
+    })));
     new ResizeObserver(() => map.invalidateSize()).observe(box);
     select(sel);
   };
