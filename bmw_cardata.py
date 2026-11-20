@@ -1007,6 +1007,225 @@ def reset():
 
 
 # =============================================================================
+# Publication vers Home Assistant (MQTT, découverte automatique)
+# =============================================================================
+HA_LAT = "vehicle.cabin.infotainment.navigation.currentLocation.latitude"
+HA_LON = "vehicle.cabin.infotainment.navigation.currentLocation.longitude"
+HA_BINARY = {"true": True, "false": False, "open": True, "closed": False, "intermediate": True}
+# unité BMW → (unité Home Assistant, classe d'appareil)
+HA_UNITS = {
+    "km": ("km", "distance"), "m": ("m", "distance"), "%": ("%", None), "percent": ("%", None),
+    "v": ("V", "voltage"), "kpa": ("kPa", "pressure"), "°c": ("°C", "temperature"), "celsius": ("°C", "temperature"),
+    "l": ("L", "volume_storage"), "km/h": ("km/h", "speed"), "min": ("min", "duration"),
+    "degrees": ("°", None), "°": ("°", None), "kwh": ("kWh", "energy"),
+}
+
+
+def ha_settings(config):
+    """Réglages du broker MQTT de Home Assistant : section « home_assistant » de config.json,
+    ou variables d'environnement BMW_HA_* (prioritaires, pratiques avec Docker)."""
+    ha = dict((config or {}).get("home_assistant") or {})
+    for key in ("host", "port", "username", "password", "discovery_prefix", "tls"):
+        env = os.environ.get(f"BMW_HA_{key.upper()}")
+        if env:
+            ha[key] = env
+    return ha if ha.get("host") else None
+
+
+class HomeAssistant:
+    """Publie les valeurs reçues en direct sur le broker MQTT de Home Assistant, avec les messages
+    de découverte : la voiture apparaît dans Home Assistant comme un appareil avec ses capteurs,
+    sans configuration. Toute erreur ici est signalée mais n'interrompt jamais le flux BMW."""
+
+    def __init__(self, settings, vin, profile):
+        self.cfg, self.vin = settings, vin
+        self.prefix = settings.get("discovery_prefix") or "homeassistant"
+        self.node = "bmw_" + hashlib.sha1(vin.encode()).hexdigest()[:10]  # le VIN n'apparaît pas dans les sujets
+        self.base = f"bmw_cardata/{self.node}"
+        self.avail = f"{self.base}/availability"
+        name = " ".join(x for x in (profile.get("brand") or "BMW", profile.get("modelName")) if x)
+        self.device = {"identifiers": [self.node], "name": name, "manufacturer": "BMW",
+                       "model": " ".join(x for x in (profile.get("modelName"), profile.get("seriesDevt")) if x) or None,
+                       "serial_number": vin}
+        self.device = {k: v for k, v in self.device.items() if v}
+        self.values = {}       # dernières valeurs connues, republiées à chaque (re)connexion
+        self.announced = set()  # entités déjà déclarées depuis la connexion
+        self.client = None
+        self.lock = threading.Lock()
+
+    def start(self, telematic):
+        import paho.mqtt.client as mqtt
+        from paho.mqtt.enums import CallbackAPIVersion
+        # MQTT v5 : le broker donne la raison d'une déconnexion (session reprise, accès refusé…)
+        c = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, client_id=f"{self.node}-cardata",
+                        protocol=mqtt.MQTTv5)
+        if self.cfg.get("username"):
+            c.username_pw_set(self.cfg["username"], self.cfg.get("password") or None)
+        if str(self.cfg.get("tls", "")).lower() in ("1", "true", "yes", "oui"):
+            c.tls_set()
+        c.will_set(self.avail, "offline", qos=1, retain=True)
+        c.reconnect_delay_set(min_delay=30, max_delay=600)  # jamais de reconnexions en rafale
+        c.on_connect, c.on_disconnect, c.on_message = self._on_connect, self._on_disconnect, self._on_message
+        self.client = c
+        self.update(telematic, send=False)
+        port = int(self.cfg.get("port") or 1883)
+        print(f"Home Assistant : connexion au broker MQTT {self.cfg['host']}:{port}…")
+        c.connect_async(self.cfg["host"], port, keepalive=60)
+        c.loop_start()
+
+    def stop(self):
+        if self.client:
+            try:
+                self.client.publish(self.avail, "offline", qos=1, retain=True).wait_for_publish(3)
+            except Exception:
+                pass
+            self.client.loop_stop()
+            self.client.disconnect()
+
+    # Raisons pour lesquelles on cesse de publier au lieu de se reconnecter : se reconnecter
+    # éjecterait un autre client (même identifiant) ou ferait bannir l'utilisateur par le broker.
+    HA_FATAL = {"Session taken over", "Not authorized", "Bad user name or password", "Banned",
+                "Server busy", "Client identifier not valid", "Connection rate exceeded"}
+
+    def _give_up(self, client, reason):
+        print(f"[{datetime.now():%H:%M:%S}] Home Assistant : publication arrêtée ({reason}).")
+        if str(reason) == "Session taken over":
+            print("    Un autre client du broker utilise le même identifiant de session. Certains brokers (EMQX,\n"
+                  "    option « use_username_as_clientid ») le déduisent du nom d'utilisateur : créez sur le\n"
+                  "    broker un utilisateur réservé à ce script, puis redémarrez-le.")
+        else:
+            print("    Vérifiez l'utilisateur et le mot de passe MQTT dans config.json, puis redémarrez le script.")
+        self.stopped = True
+        threading.Thread(target=client.disconnect, daemon=True).start()  # coupe aussi la reconnexion automatique
+
+    def _on_connect(self, client, userdata, flags, reason_code, properties):
+        if reason_code.is_failure:
+            if str(reason_code) in self.HA_FATAL:
+                self._give_up(client, reason_code)
+            else:
+                print(f"[{datetime.now():%H:%M:%S}] Home Assistant : connexion refusée par le broker ({reason_code}).")
+            return
+        print(f"[{datetime.now():%H:%M:%S}] Home Assistant : connecté, {len(self.values)} valeur(s) publiée(s).")
+        client.subscribe(f"{self.prefix}/status")  # Home Assistant redémarre → on se déclare à nouveau
+        with self.lock:
+            self.announced.clear()
+        client.publish(self.avail, "online", qos=1, retain=True)
+        self._flush(list(self.values))
+
+    def _on_disconnect(self, client, userdata, flags, reason_code, properties):
+        if getattr(self, "stopped", False):
+            return
+        if str(reason_code) in self.HA_FATAL:
+            self._give_up(client, reason_code)
+        elif reason_code.is_failure:
+            print(f"[{datetime.now():%H:%M:%S}] Home Assistant : déconnecté ({reason_code}), reconnexion automatique.")
+
+    def _on_message(self, client, userdata, msg):
+        if msg.topic == f"{self.prefix}/status" and msg.payload == b"online":
+            with self.lock:
+                self.announced.clear()
+            client.publish(self.avail, "online", qos=1, retain=True)
+            self._flush(list(self.values))
+
+    def update(self, data, send=True):
+        """Mémorise les nouvelles valeurs ({clé: {value, unit, timestamp}}) et les publie."""
+        keys = []
+        for k, e in (data or {}).items():
+            if isinstance(e, dict) and e.get("value") not in (None, "") and self._kind(k, e):
+                self.values[k] = e
+                keys.append(k)
+        if send and keys and self.client and self.client.is_connected() and not getattr(self, "stopped", False):
+            self._flush(keys)
+
+    @staticmethod
+    def _kind(key, e):
+        v = str(e.get("value"))
+        if key in (HA_LAT, HA_LON):
+            return "tracker"
+        if len(v) > 250 or v.lstrip()[:1] in "[{<":
+            return None  # listes JSON / XML (entretien, défauts) : trop longues pour un état Home Assistant
+        if v.lower() in HA_BINARY and key not in SPECIAL_VALUES:
+            return "binary"
+        try:
+            float(v)
+            return "number" if key not in SPECIAL_VALUES else "text"
+        except ValueError:
+            return "text"
+
+    def _flush(self, keys):
+        with self.lock:  # appelé depuis le flux BMW et depuis la connexion au broker
+            self._flush_locked(keys)
+
+    def _flush_locked(self, keys):
+        try:
+            for k in keys:
+                e = self.values.get(k)
+                kind = self._kind(k, e) if e else None
+                if not kind:
+                    continue
+                if kind == "tracker":
+                    self._tracker()
+                    continue
+                slug = k.removeprefix("vehicle.").replace(".", "_")
+                topic = f"{self.base}/{slug}"
+                if slug not in self.announced:
+                    self._announce(k, slug, topic, kind, e)
+                v = str(e["value"])
+                if kind == "binary":
+                    state = "ON" if HA_BINARY[v.lower()] else "OFF"
+                elif kind == "number":
+                    state = v
+                else:
+                    state = fmt_value(e, k) or v
+                self.client.publish(topic, state, qos=0, retain=True)
+        except Exception as ex:  # ne jamais interrompre le flux BMW
+            print(f"Home Assistant : publication impossible ({ex}).")
+
+    def _announce(self, key, slug, topic, kind, e):
+        cfg = {"name": LABELS.get(key) or key.split(".")[-1], "unique_id": f"{self.node}_{slug}",
+               "state_topic": topic, "availability_topic": self.avail,
+               "device": self.device, "origin": {"name": "BMW CarData dashboard"}}
+        component = "sensor"
+        if kind == "binary":
+            component = "binary_sensor"
+            cls = ("door" if ".door." in key else "window" if ".window." in key
+                   else "opening" if key.endswith("isOpen") or "sunroof" in key else None)
+            if cls:
+                cfg["device_class"] = cls
+        elif kind == "number":
+            unit = str(e.get("unit") or DEFAULT_UNITS.get(key, "")).lower()
+            ha_unit, cls = HA_UNITS.get(unit, (e.get("unit") or DEFAULT_UNITS.get(key) or None, None))
+            if ha_unit:
+                cfg["unit_of_measurement"] = ha_unit
+            if key.endswith("stateOfCharge"):
+                cls = "battery"
+            if cls:
+                cfg["device_class"] = cls
+            cfg["state_class"] = "total_increasing" if key == "vehicle.vehicle.travelledDistance" else "measurement"
+        self.client.publish(f"{self.prefix}/{component}/{self.node}/{slug}/config",
+                            json.dumps(cfg, ensure_ascii=False), qos=1, retain=True)
+        self.announced.add(slug)
+
+    def _tracker(self):
+        lat, lon = self.values.get(HA_LAT), self.values.get(HA_LON)
+        if not lat or not lon:
+            return
+        topic = f"{self.base}/position"
+        if "position" not in self.announced:
+            cfg = {"name": "Position", "unique_id": f"{self.node}_position",
+                   "json_attributes_topic": topic, "source_type": "gps", "availability_topic": self.avail,
+                   "device": self.device, "origin": {"name": "BMW CarData dashboard"}}
+            self.client.publish(f"{self.prefix}/device_tracker/{self.node}/position/config",
+                                json.dumps(cfg, ensure_ascii=False), qos=1, retain=True)
+            self.announced.add("position")
+        try:
+            attrs = {"latitude": float(lat["value"]), "longitude": float(lon["value"]), "gps_accuracy": 10}
+        except (TypeError, ValueError):
+            return
+        self.client.publish(topic, json.dumps(attrs), qos=0, retain=True)
+
+
+# =============================================================================
 # Streaming en direct (MQTT)
 # =============================================================================
 class LiveState:
@@ -1115,6 +1334,17 @@ def stream():
         render_dashboard(vin, telematic, fetched_at, last.get("fetched_iso") or now_iso(), live=True)
     url = start_live_server()
 
+    # Home Assistant (facultatif) : section « home_assistant » de config.json ou variables BMW_HA_*
+    ha = None
+    ha_cfg = ha_settings(config)
+    if ha_cfg:
+        try:
+            ha = HomeAssistant(ha_cfg, vin, load_json(PROFILE_FILE, {}) or {})
+            ha.start(telematic)
+        except Exception as e:
+            print(f"Home Assistant : publication désactivée ({e}).")
+            ha = None
+
     state = {"need_reconnect": False}
 
     def on_connect(client, userdata, flags, reason_code, properties):
@@ -1160,6 +1390,8 @@ def stream():
             save_json(LAST_FILE, {"vin": vin, "fetched_at": fetched_at, "fetched_iso": now_iso(),
                                   "telematicData": telematic})
             render_dashboard(vin, telematic, fetched_at, now_iso(), live=True)
+        if ha:
+            ha.update({k: telematic[k] for k in incoming if k in telematic})
         LiveState.version += 1
         LiveState.messages += 1
         LiveState.last_message = now_iso()
@@ -1229,6 +1461,8 @@ def stream():
             client.disconnect()
         except Exception:
             pass
+        if ha:
+            ha.stop()
         with _lock:
             render_dashboard(vin, telematic, fetched_at, now_iso(), live=False)
         print("\nStreaming arrêté. Le tableau de bord garde les dernières données reçues.")

@@ -46,6 +46,7 @@
 - [🕹️ Utilisation](#utilisation)
 - [📡 Streaming en direct](#streaming)
 - [🐳 En continu sur un serveur (Docker)](#docker)
+- [🏠 Home Assistant (MQTT)](#home-assistant)
 - [🖥️ Le tableau de bord](#tableau-de-bord)
   - [La base de l'historique (SQLite)](#base-historique)
 - [📊 Données récupérées](#donnees)
@@ -75,6 +76,9 @@ La voiture envoie ses données dès qu'elle les transmet. La page se met à jour
 
 ### 🗄️ Historique en base SQLite
 Chaque valeur reçue est rangée dans `historique.db`, que vous pouvez interroger en SQL. [Détails](#base-historique)
+
+### 🏠 Publication vers Home Assistant
+Les valeurs reçues en direct sont publiées sur votre broker MQTT, avec la découverte automatique : la voiture apparaît dans Home Assistant avec ses capteurs et sa position. [Détails](#home-assistant)
 
 </td>
 <td width="50%" valign="top">
@@ -147,6 +151,7 @@ flowchart LR
     S --> H["🖥️ tableau_de_bord.html"]
     S --> D["🗄️ historique.db<br/>(SQLite)"]
     S --> L["🌐 http://127.0.0.1:8765<br/>page en direct"]
+    S -. "MQTT (facultatif)" .-> HA["🏠 Home Assistant"]
 ```
 
 | Mode | Commande | Principe |
@@ -299,6 +304,42 @@ Avec `-AvecDonnees`, les données déjà présentes sur le serveur sont mises de
 
 <br>
 
+<a id="home-assistant"></a>
+## 🏠 Home Assistant (MQTT)
+
+Pendant `stream`, le script peut publier chaque valeur reçue sur le broker MQTT utilisé par Home Assistant (Mosquitto, EMQX…), avec les messages de **découverte automatique** : aucune configuration à écrire côté Home Assistant, l'intégration MQTT crée l'appareil toute seule.
+
+Ajoutez une section `home_assistant` à `config.json` (dans `data/` avec Docker), puis redémarrez `stream` ou le conteneur :
+
+```json
+"home_assistant": {
+  "host": "192.168.1.10",
+  "port": 1883,
+  "username": "bmw",
+  "password": "votre-mot-de-passe-mqtt",
+  "discovery_prefix": "homeassistant"
+}
+```
+
+Seul `host` est obligatoire. Ajoutez `"tls": true` pour un broker chiffré (port 8883 en général). Les variables d'environnement `BMW_HA_HOST`, `BMW_HA_PORT`, `BMW_HA_USERNAME`, `BMW_HA_PASSWORD`, `BMW_HA_DISCOVERY_PREFIX` et `BMW_HA_TLS` remplacent ces réglages si elles sont définies. **Créez sur le broker un utilisateur réservé à ce script**, différent de ceux de Home Assistant, zigbee2mqtt, etc. : certains brokers (EMQX avec `use_username_as_clientid`) n'acceptent qu'une connexion par utilisateur, et deux clients qui partagent un utilisateur s'éjectent alors l'un l'autre. Si le broker reprend la session, refuse les identifiants ou limite les connexions, le script cesse de publier et l'explique dans son journal, plutôt que de se reconnecter en boucle.
+
+Ce qui apparaît dans Home Assistant (**Paramètres → Appareils et services → MQTT**) :
+
+| Entité | Données |
+|---|---|
+| **Capteurs** | Chaque valeur numérique avec son unité et sa classe : kilométrage, carburant, autonomie, pressions des pneus, tension de la batterie… |
+| **Capteurs binaires** | Portes, vitres, capot, coffre, toit ouvrant (ouvert / fermé) et autres valeurs oui / non |
+| **Capteurs texte** | Verrouillage, alarme, santé de la batterie… avec les libellés en français du tableau de bord |
+| **Suivi de position** | `device_tracker` avec la position GPS : la voiture apparaît sur la carte de Home Assistant |
+
+- Une entité est créée la première fois que sa donnée est reçue, puis mise à jour à chaque message. Les valeurs sont conservées par le broker (*retain*) : Home Assistant les retrouve à son redémarrage.
+- L'appareil est indiqué **indisponible** quand le script s'arrête ou perd la connexion.
+- Les listes longues (détail de l'entretien, mémoire des défauts) ne sont pas publiées : un état Home Assistant est limité à 255 caractères.
+- Les sujets MQTT commencent par `bmw_cardata/` et ne contiennent pas le VIN, remplacé par une empreinte. Le VIN figure seulement dans la fiche de l'appareil (numéro de série).
+- Si le broker est injoignable, le flux BMW et la page continuent de fonctionner : le script retente la connexion tout seul.
+
+<br>
+
 <a id="tableau-de-bord"></a>
 ## 🖥️ Le tableau de bord
 
@@ -382,14 +423,14 @@ La liste se modifie dans `DESCRIPTORS`, en haut de `bmw_cardata.py`. Le catalogu
 <a id="confidentialite"></a>
 ## 🔒 Confidentialité
 
-Tout reste **sur votre PC**. Le script ne parle qu'aux serveurs de BMW, et la page en direct n'est accessible que depuis votre machine (`127.0.0.1`). Le petit serveur local ne sert que la page, la photo et l'historique d'une donnée à la demande (position comprise), jamais vos jetons ni votre configuration.
+Tout reste **sur votre PC**. Le script ne parle qu'aux serveurs de BMW (et à votre broker MQTT si vous activez [Home Assistant](#home-assistant)), et la page en direct n'est accessible que depuis votre machine (`127.0.0.1`). Le petit serveur local ne sert que la page, la photo et l'historique d'une donnée à la demande (position comprise), jamais vos jetons ni votre configuration.
 
 Les fichiers personnels sont exclus du dépôt par le [`.gitignore`](.gitignore) :
 
 | Fichier | Contenu |
 |---|---|
 | `tokens.json` | Jetons de connexion BMW (**à ne jamais partager**) |
-| `config.json` | Client ID, VIN, identifiant du conteneur, capacité du réservoir (`tank_liters`, facultatif) |
+| `config.json` | Client ID, VIN, identifiant du conteneur, capacité du réservoir (`tank_liters`, facultatif), accès au broker MQTT de Home Assistant (facultatif) |
 | `derniere_lecture.json` | Dernières données connues, dont la position GPS |
 | `historique.db` | Base SQLite de toutes les valeurs reçues, dont les positions GPS successives |
 | `historique_stream.jsonl` | Journal brut des messages reçus en direct |
