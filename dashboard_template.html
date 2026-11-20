@@ -989,7 +989,7 @@ function loadLeaflet() {
 const ENUM_FR = {
   LOCKED: "Verrouillée", SECURED: "Verrouillée", UNLOCKED: "Déverrouillée", SELECTIVE_LOCKED: "Partiellement verrouillée",
   CLOSED: "Fermé", OPEN: "Ouvert", INTERMEDIATE: "Entrouvert", ARMED: "Activée", UNARMED: "Désactivée", DISARMED: "Désactivée",
-  OK: "OK", PENDING: "Bientôt", OVERDUE: "En retard", DUE: "À faire", ACTIVE: "Actif", INACTIVE: "Inactif",
+  OK: "OK", PENDING: "Bientôt", OVERDUE: "En retard", DUE: "À faire", ACTIVE: "Actif", INACTIVE: "Inactif", utc: "UTC",
 };
 const UNIT_FR = { percent: "%", "%": "%", km: "km", kPa: "kPa", l: "L", V: "V", celsius: "°C", Celsius: "°C", "km/h": "km/h", degrees: "°", min: "min", s: "s", h: "h", weeks: "sem.", months: "mois", kWh: "kWh" };
 /* valeur formatée + classe de couleur ; good = valeur « booléenne » considérée comme normale */
@@ -1004,6 +1004,7 @@ function fv(k, { good = false, unit } = {}) {
   const s = String(v);
   const sp = SPECIAL[k] && SPECIAL[k][s];
   if (sp) return { t: sp[0], c: sp[1] };
+  if (/\.timers\..*\.action$/.test(k)) { const on = /^ACTIV/i.test(s); return { t: on ? "Activé" : "Désactivé", c: on ? "ok" : "" }; }
   if (s.trim().startsWith("<")) { const n = (parseList(k) || []).length; return { t: `${n} code${n > 1 ? "s" : ""}`, c: "" }; }
   if (/^[\[{]/.test(s.trim())) { const l = parseList(k) || []; return { t: `${l.length} élément${l.length > 1 ? "s" : ""}`, c: "" }; }
   if (/^(true|false)$/i.test(s)) { const b = /true/i.test(s); return { t: b ? "Oui" : "Non", c: b === good ? "ok" : "bad" }; }
@@ -1247,7 +1248,7 @@ function renderItems(list) {
     timer(1) + timer(2);
 
   /* --- Toutes les données --- */
-  const L = DATA.labels || {};
+  const L = Object.assign({}, DATA.catalogue || {}, DATA.labels || {});  // nos libellés, sinon ceux du catalogue BMW
   const keys = Object.keys(T).filter(k => raw(k) != null).sort((a, b) => (L[a] || a).localeCompare(L[b] || b, "fr"));
   $("allCount").textContent = `${keys.length} données`;
   $("allBody").innerHTML = keys.map(k => {
@@ -1383,7 +1384,7 @@ function fluxValue(k, e) {
 }
 (() => {
   const list = $("fluxList"), search = $("fluxSearch"), onlyNew = $("fluxOnlyNew"), pauseBtn = $("fluxPause");
-  const L = DATA.labels || {};
+  const L = Object.assign({}, DATA.catalogue || {}, DATA.labels || {});  // nos libellés, sinon ceux du catalogue BMW
   const seen = new Set();
   let total = 0, paused = false, queue = [], lastSeq = 0;
   const isLive = DATA.live && /^https?:/.test(location.protocol);

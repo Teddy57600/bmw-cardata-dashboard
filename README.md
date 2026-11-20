@@ -332,7 +332,7 @@ Ce qui apparaît dans Home Assistant (**Paramètres → Appareils et services �
 | **Capteurs texte** | Verrouillage, alarme, santé de la batterie… avec les libellés en français du tableau de bord |
 | **Suivi de position** | `device_tracker` avec la position GPS : la voiture apparaît sur la carte de Home Assistant |
 
-- Une entité est créée la première fois que sa donnée est reçue, puis mise à jour à chaque message. Les valeurs sont conservées par le broker (*retain*) : Home Assistant les retrouve à son redémarrage.
+- Une entité est créée la première fois que sa donnée est reçue, puis mise à jour à chaque message. Elle porte le nom français du tableau de bord ; une donnée que le script ne connaît pas encore prend le nom du catalogue officiel BMW. Les valeurs sont conservées par le broker (*retain*) : Home Assistant les retrouve à son redémarrage.
 - L'appareil est indiqué **indisponible** quand le script s'arrête ou perd la connexion.
 - Les listes longues (détail de l'entretien, mémoire des défauts) ne sont pas publiées : un état Home Assistant est limité à 255 caractères.
 - Les sujets MQTT commencent par `bmw_cardata/` et ne contiennent pas le VIN, remplacé par une empreinte. Le VIN figure seulement dans la fiche de l'appareil (numéro de série).

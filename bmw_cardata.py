@@ -174,6 +174,31 @@ DESCRIPTORS = [
 ]
 LABELS = {k: label for k, label, _ in DESCRIPTORS}
 
+# Données que le flux envoie sans qu'on les demande (absentes de DESCRIPTORS : les y ajouter
+# recréerait le conteneur BMW). Les autres données inconnues prennent le nom du catalogue BMW.
+LABELS.update({
+    "vehicle.body.trunk.door.isOpen": "Porte du coffre",
+    "vehicle.cabin.climate.timers.overwriteTimer.action": "Programmateur clim ponctuel",
+    "vehicle.cabin.door.status": "Portières (état global)",
+    "vehicle.cabin.sunroof.status": "Toit ouvrant (état)",
+    "vehicle.cabin.sunroof.tiltStatus": "Toit ouvrant (entrebâillé)",
+    "vehicle.vehicle.deepSleepModeActive": "Veille profonde",
+    "vehicle.vehicle.preConditioning.activity": "Préclimatisation",
+    "vehicle.vehicle.preConditioning.error": "Préclimatisation (motif d'échec)",
+    "vehicle.vehicle.preConditioning.isRemoteEngineRunning": "Moteur en marche pour la préclimatisation",
+    "vehicle.vehicle.preConditioning.isRemoteEngineStartAllowed": "Démarrage du moteur autorisé (préclimatisation)",
+    "vehicle.vehicle.preConditioning.remainingTime": "Préclimatisation (temps restant)",
+    "vehicle.vehicle.timeSetting": "Fuseau horaire du véhicule",
+})
+
+
+def label_of(key):
+    """Nom français d'une donnée : nos libellés, sinon celui du catalogue officiel BMW."""
+    if key in LABELS:
+        return LABELS[key]
+    name = ((load_json(CATALOGUE_FILE, {}) or {}).get(key) or {}).get("name")
+    return name or key.split(".")[-1]
+
 # Traduction de quelques valeurs fréquentes (les autres sont affichées telles quelles)
 VALUE_FR = {
     "LOCKED": "Verrouillée", "SECURED": "Verrouillée (sécurisée)", "UNLOCKED": "Déverrouillée",
@@ -182,6 +207,7 @@ VALUE_FR = {
     "CHARGING": "En charge", "NOCHARGING": "Pas en charge", "NOT_CHARGING": "Pas en charge",
     "FULLY_CHARGED": "Chargée", "COMPLETE": "Chargée", "ERROR": "Erreur",
     "ARMED": "Activée", "UNARMED": "Désactivée", "DISARMED": "Désactivée",
+    "ACTIVE": "Active", "INACTIVE": "Inactive", "OK": "Aucun problème", "utc": "UTC",
 }
 
 # Unités à utiliser quand BMW n'en fournit pas
@@ -193,6 +219,7 @@ DEFAULT_UNITS = {
     "vehicle.status.conditionBasedServicesAverageDistancePerDay": "km",
     "vehicle.cabin.infotainment.navigation.currentLocation.heading": "°",
     "vehicle.cabin.infotainment.navigation.currentLocation.altitude": "m",
+    "vehicle.vehicle.preConditioning.remainingTime": "min",
 }
 
 # Valeurs codées, d'après le catalogue officiel BMW CarData
@@ -492,7 +519,7 @@ def fmt_value(entry, key=""):
         return SPECIAL_VALUES[key][value]
     if value.startswith("<"):  # mémoire des défauts (XML)
         return f"{value.count('<dtc ')} code(s) enregistré(s)"
-    if key.endswith("Timer1.action") or key.endswith("Timer2.action"):
+    if ".timers." in key and key.endswith(".action"):  # programmateurs de clim : ACTIVATE / deactive
         return "Activé" if value.upper().startswith("ACTIV") else "Désactivé"
     if value[:1] in "[{":  # listes (entretien, alertes...) : on résume
         try:
@@ -1182,7 +1209,7 @@ class HomeAssistant:
             print(f"Home Assistant : publication impossible ({ex}).")
 
     def _announce(self, key, slug, topic, kind, e):
-        cfg = {"name": LABELS.get(key) or key.split(".")[-1], "unique_id": f"{self.node}_{slug}",
+        cfg = {"name": label_of(key), "unique_id": f"{self.node}_{slug}",
                "state_topic": topic, "availability_topic": self.avail,
                "device": self.device, "origin": {"name": "BMW CarData dashboard"}}
         component = "sensor"
