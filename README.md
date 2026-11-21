@@ -78,7 +78,7 @@ La voiture envoie ses données dès qu'elle les transmet. La page se met à jour
 Chaque valeur reçue est rangée dans `historique.db`, que vous pouvez interroger en SQL. [Détails](#base-historique)
 
 ### 🏠 Publication vers Home Assistant
-Les valeurs reçues en direct sont publiées sur votre broker MQTT, avec la découverte automatique : la voiture apparaît dans Home Assistant avec ses capteurs et sa position. [Détails](#home-assistant)
+Les valeurs reçues en direct sont publiées sur votre broker MQTT, avec la découverte automatique : la voiture apparaît dans Home Assistant avec ses capteurs, sa position et sa photo. [Détails](#home-assistant)
 
 </td>
 <td width="50%" valign="top">
@@ -332,6 +332,9 @@ Ce qui apparaît dans Home Assistant (**Paramètres → Appareils et services �
 | **Capteurs binaires** | Portes, vitres, capot, coffre, toit ouvrant (ouvert / fermé) et autres valeurs oui / non |
 | **Capteurs texte** | Verrouillage, alarme, santé de la batterie… avec les libellés en français du tableau de bord |
 | **Suivi de position** | `device_tracker` avec la position GPS : la voiture apparaît sur la carte de Home Assistant |
+| **Photo** | Entité `image` avec la photo officielle de la voiture, celle du haut du tableau de bord (fichier `voiture.png` créé par `profile`) : à afficher dans une carte *Image* ou *Picture entity* |
+
+La photo est envoyée telle quelle dans un message MQTT (environ 200 Ko), à chaque connexion au broker et à chaque redémarrage de Home Assistant. Le broker doit accepter des messages de cette taille : c'est le cas par défaut de Mosquitto (256 Mo) et d'EMQX (1 Mo). Sans photo (pas encore de `profile`), l'entité n'est pas créée.
 
 - Une entité est créée la première fois que sa donnée est reçue, puis mise à jour à chaque message. Elle porte le nom français du tableau de bord ; une donnée que le script ne connaît pas encore prend le nom du catalogue officiel BMW. Les valeurs sont conservées par le broker (*retain*) : Home Assistant les retrouve à son redémarrage.
 - L'appareil est indiqué **indisponible** quand le script s'arrête ou perd la connexion.

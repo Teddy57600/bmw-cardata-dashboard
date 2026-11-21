@@ -1141,6 +1141,7 @@ class HomeAssistant:
             self.announced.clear()
         client.publish(self.avail, "online", qos=1, retain=True)
         self._flush(list(self.values))
+        self._photo()
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties):
         if getattr(self, "stopped", False):
@@ -1156,6 +1157,27 @@ class HomeAssistant:
                 self.announced.clear()
             client.publish(self.avail, "online", qos=1, retain=True)
             self._flush(list(self.values))
+            self._photo()
+
+    def _photo(self):
+        """Entité « image » avec la photo officielle (voiture.png de la commande profile), envoyée
+        telle quelle dans un message MQTT conservé par le broker : Home Assistant n'a pas besoin de la page."""
+        photo = next(iter(sorted(DATA.glob("voiture.*"))), None)
+        if not photo:
+            return
+        try:
+            raw = photo.read_bytes()
+            ctype = "image/png" if photo.suffix.lower() == ".png" else "image/jpeg"
+            topic = f"{self.base}/photo"
+            cfg = {"name": "Photo", "unique_id": f"{self.node}_photo", "image_topic": topic,
+                   "content_type": ctype, "availability_topic": self.avail,
+                   "device": self.device, "origin": {"name": "BMW CarData dashboard"}}
+            with self.lock:
+                self.client.publish(f"{self.prefix}/image/{self.node}/photo/config",
+                                    json.dumps(cfg, ensure_ascii=False), qos=1, retain=True)
+                self.client.publish(topic, raw, qos=1, retain=True)
+        except Exception as ex:  # ne jamais interrompre le flux BMW
+            print(f"Home Assistant : photo non publiée ({ex}).")
 
     def update(self, data, send=True):
         """Mémorise les nouvelles valeurs ({clé: {value, unit, timestamp}}) et les publie."""
