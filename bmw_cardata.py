@@ -1345,7 +1345,9 @@ class _Journal:
                 stamp = f"{datetime.now():%Y-%m-%d %H:%M:%S}"
                 try:
                     self._rotate()
-                    with open(self.path, "a", encoding="utf-8") as f:
+                    # 600 comme les autres fichiers personnels : le journal contient le VIN.
+                    with open(self.path, "a", encoding="utf-8",
+                              opener=lambda p, fl: os.open(p, fl, 0o600)) as f:
                         f.writelines(f"{stamp}  {line}\n" for line in lines)
                 except OSError:
                     pass  # le journal ne doit jamais arrêter le flux
