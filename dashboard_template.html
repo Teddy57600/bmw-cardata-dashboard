@@ -376,7 +376,8 @@ footer { color: var(--faint); font-size: 12px; text-align: center; padding: 34px
   .spec { grid-template-columns: 1fr; }
   .odo .d { width: 32px; height: 50px; } .odo .d .reel span { height: 50px; font-size: 30px; line-height: 50px; }
 }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .reveal { opacity: 1; transform: none; } }
+/* Le réglage « animations réduites » du navigateur est volontairement ignoré (choix de l'utilisateur, 21/11) :
+   ce tableau de bord personnel garde toujours ses animations. */
 </style>
 </head>
 <body>
@@ -591,7 +592,13 @@ function setFavicon(state) {  // state : "ok", "down" ou null (pas de pastille)
   const href = "data:image/svg+xml," + encodeURIComponent(svg);
   if (link.href !== href) link.href = href;
 }
-if (/[?&]still\b/.test(location.search)) document.documentElement.classList.add("still");  /* ?still : page sans animation (captures d'écran) */
+const STILL_PARAM = /[?&]still\b/.test(location.search);
+if (STILL_PARAM) document.documentElement.classList.add("still");  /* ?still : page sans animation (captures d'écran) */
+/* Animations de la vue d'ensemble : la valeur finale n'est posée qu'après l'affichage de l'onglet,
+   une fois l'état de départ calculé par le navigateur (sinon la transition ne se joue pas). */
+const START = [];
+const onStart = fn => START.push(fn);
+
 try { if (sessionStorage.getItem("still")) { document.documentElement.classList.add("still"); sessionStorage.removeItem("still"); } } catch (e) {}
 
 /* ---------------- utilitaires ---------------- */
@@ -747,13 +754,13 @@ function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<"
     <text x="${fx - 6}" y="${fy + 18}" text-anchor="middle" class="lbl">PLEIN</text>`;
   $("range").innerHTML = range == null ? "—" : `${fmt(range)}<small>km</small>`;
   if (lvl != null) {
-    setTimeout(() => {
+    onStart(() => {
       $("fuelArc").style.strokeDashoffset = 100 - lvl;
       countUp($("fuelVal"), lvl, 1600);
-    }, 60);
+    });
     $("fuelHint").textContent = lvl <= 15 ? "Pensez à faire le plein bientôt." : lvl >= 90 ? "Réservoir quasiment plein." : "";
   }
-  if (range != null) setTimeout(() => $("rangeBar").style.width = Math.min(100, range / 900 * 100) + "%", 60);
+  if (range != null) onStart(() => $("rangeBar").style.width = Math.min(100, range / 900 * 100) + "%");
   ageTag($("fuelAge"), "vehicle.drivetrain.fuelSystem.level");
 })();
 
@@ -777,7 +784,7 @@ function countUp(el, to, dur) {
     d.appendChild(reel); wrap.appendChild(d);
     const target = ch === "-" ? 10 : +ch;
     reel.style.transitionDelay = (0.15 + i * 0.12) + "s";
-    setTimeout(() => reel.style.transform = `translateY(-${target * 100 / (ch === "-" ? 11 : 10)}%)`, 60);
+    onStart(() => reel.style.transform = `translateY(-${target * 100 / (ch === "-" ? 11 : 10)}%)`);
   });
   if (km != null && P.constructionDate) {
     const months = Math.max(1, (fetched - new Date(P.constructionDate)) / (30.44 * 86400000));
@@ -850,7 +857,7 @@ function countUp(el, to, dur) {
   };
   $("tiresLeft").innerHTML = tire(AX + "row1.wheel.left.tire.pressure", "Avant gauche") + tire(AX + "row2.wheel.left.tire.pressure", "Arrière gauche");
   $("tiresRight").innerHTML = tire(AX + "row1.wheel.right.tire.pressure", "Avant droit") + tire(AX + "row2.wheel.right.tire.pressure", "Arrière droit");
-  setTimeout(() => document.querySelectorAll(".tire .mini i").forEach(i => i.style.width = i.dataset.w + "%"), 60);
+  onStart(() => document.querySelectorAll(".tire .mini i").forEach(i => i.style.width = i.dataset.w + "%"));
 
   $("openings").innerHTML = OPENINGS.map(o => {
     const s = status(raw(o.k));
@@ -1334,8 +1341,9 @@ function renderItems(list) {
 
 /* ================= rejouer les animations de la vue d'ensemble ================= */
 function replayOverview() {
-  if (document.documentElement.classList.contains("still")) return;
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (STILL_PARAM) return;  // captures d'écran : jamais d'animation
+  // après un rechargement silencieux (nouvelle donnée), la page est figée : on la libère pour rejouer
+  document.documentElement.classList.remove("still");
   // [élément, propriété de style, valeur de départ]
   const moves = [
     [$("fuelArc"), "strokeDashoffset", "100"],
@@ -1356,7 +1364,7 @@ function replayOverview() {
   void document.body.offsetWidth;  // force le navigateur à prendre en compte l'état de départ
   anim.forEach(el => el.style.animation = "");
   // 3. on repart vers les valeurs finales, avec les transitions d'origine
-  requestAnimationFrame(() => requestAnimationFrame(() => finals.forEach(([el, css]) => el.style.cssText = css)));
+  finals.forEach(([el, css]) => el.style.cssText = css);  // l'état de départ est déjà calculé (ligne ci-dessus) : la transition part
   const lvl = num("vehicle.drivetrain.fuelSystem.level");
   if (lvl != null) countUp($("fuelVal"), lvl, 1600);
 }
@@ -1859,6 +1867,8 @@ function fluxValue(k, e) {
   };
   window.addEventListener("hashchange", () => { show(); const t = $("tabs"); if (t.getBoundingClientRect().top < 0 || scrollY > t.offsetTop) scrollTo({ top: t.offsetTop, behavior: "smooth" }); });
   show();
+  void document.body.offsetWidth;  // onglet affiché, état de départ calculé : les transitions peuvent partir
+  START.splice(0).forEach(fn => fn());
 })();
 
 /* ================= mode « en direct » (commande stream) ================= */

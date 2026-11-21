@@ -84,7 +84,7 @@ Les valeurs reçues en direct sont publiées sur votre broker MQTT, avec la déc
 <td width="50%" valign="top">
 
 ### 🖥️ Tableau de bord élégant
-Thème sombre, jauge animée, compteur à rouleaux, vue de dessus de la voiture, carte, graphiques d'historique, carte des trajets, sept onglets. Fonctionne aussi sur téléphone.
+Thème sombre, jauge animée, compteur à rouleaux (animations rejouées à chaque retour sur la vue d'ensemble, même si le navigateur demande de réduire les animations), vue de dessus de la voiture, carte, graphiques d'historique, carte des trajets, sept onglets. Fonctionne aussi sur téléphone.
 
 ### 🔎 Flux brut consultable
 Un onglet affiche **chaque message MQTT reçu**, avec les noms officiels BMW en français, même pour les données que le tableau de bord n'affiche pas.
