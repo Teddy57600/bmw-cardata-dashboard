@@ -110,13 +110,23 @@ body {
 .bar > i { display: block; height: 100%; width: 0; border-radius: 4px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 1.4s cubic-bezier(.2,.8,.2,1) .3s; }
 
 /* compteur */
-.odo { display: flex; gap: 5px; margin: 6px 0 10px; }
-.odo .d { width: 42px; height: 62px; border-radius: 8px; overflow: hidden; position: relative;
-  background: linear-gradient(180deg, #151a22, #0b0e13); border: 1px solid rgba(255,255,255,.07);
-  box-shadow: inset 0 8px 10px -6px rgba(0,0,0,.8), inset 0 -8px 10px -6px rgba(0,0,0,.8); }
-.odo .d .reel { position: absolute; left: 0; right: 0; top: 0; transition: transform 1.8s cubic-bezier(.2,.8,.2,1); }
-.odo .d .reel span { display: block; height: 62px; line-height: 62px; text-align: center; font: 500 40px/62px var(--display); }
-.odo .d.blank { background: transparent; border-color: transparent; box-shadow: none; width: 12px; }
+/* tambours mécaniques dans une seule fenêtre : cadre métal, verre, tambours galbés (on devine les chiffres voisins) */
+.odo { display: inline-flex; padding: 4px; border-radius: 9px; margin: 6px 0 10px;
+  background: linear-gradient(180deg, #a7b0bb, #4a525d 45%, #1b1f25 55%, #6d7682); box-shadow: 0 6px 18px rgba(0,0,0,.55); }
+.odo .slot { display: flex; gap: 2px; padding: 0 3px; position: relative; border-radius: 5px; overflow: hidden; background: #050608; }
+.odo .slot::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,0) 38%),
+              linear-gradient(180deg, rgba(0,0,0,.55), transparent 22%, transparent 78%, rgba(0,0,0,.6));
+  box-shadow: inset 0 2px 5px rgba(0,0,0,.9); }
+.odo .drum { --h: 58px; --p: 44px; position: relative; width: 38px; height: var(--h); overflow: hidden;
+  background: linear-gradient(90deg, #101318, #1d2229 50%, #101318); }
+.odo .drum::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(0,0,0,.92), rgba(0,0,0,.35) 24%, rgba(255,255,255,.07) 50%, rgba(0,0,0,.35) 76%, rgba(0,0,0,.92)); }
+/* --j : petit désalignement propre à chaque tambour, comme sur un vrai compteur */
+.odo .reel { position: absolute; left: 0; right: 0; top: calc((var(--h) - var(--p)) / 2 + var(--j, 0px)); will-change: transform; }
+.odo .reel span { display: block; height: var(--p); text-align: center; font: 500 38px/var(--p) var(--display); color: #efe9da; }
+.odo .drum.last { background: linear-gradient(90deg, #d9d4c7, #f4f0e6 50%, #d9d4c7); }
+.odo .drum.last .reel span { color: #15181d; }
 .odo-unit { color: var(--muted); font-size: 13px; }
 .big { font: 700 52px/1 var(--display); }
 .big small { font-size: 20px; color: var(--muted); font-weight: 500; margin-left: 4px; }
@@ -374,7 +384,7 @@ footer { color: var(--faint); font-size: 12px; text-align: center; padding: 34px
   .top-view svg.car-top { grid-column: 1 / -1; grid-row: 1; margin: 0 auto; width: 150px; }
   .tires { gap: 10px; }
   .spec { grid-template-columns: 1fr; }
-  .odo .d { width: 32px; height: 50px; } .odo .d .reel span { height: 50px; font-size: 30px; line-height: 50px; }
+  .odo .drum { --h: 48px; --p: 36px; width: 30px; } .odo .reel span { font-size: 30px; }
 }
 /* Le réglage « animations réduites » du navigateur est volontairement ignoré (choix de l'utilisateur, 21/11) :
    ce tableau de bord personnel garde toujours ses animations. */
@@ -775,16 +785,26 @@ function countUp(el, to, dur) {
 (() => {
   const km = num("vehicle.vehicle.travelledDistance");
   const s = km == null ? "------" : String(Math.round(km)).padStart(6, "0");
-  const wrap = $("odo");
+  const slot = document.createElement("div"); slot.className = "slot";
+  $("odo").appendChild(slot);
+  // Comme un vrai odomètre, chaque tambour part de 0 et les rangs faibles font plus de tours :
+  // unités 3 tours, dizaines 2, centaines et milliers 1. Désalignement fixe (px) par tambour.
+  const TURNS = [3, 2, 1, 1], JITTER = [0.5, -1, 1.5, -0.5, 1, -1.5];
   [...s].forEach((ch, i) => {
-    if (i > 0 && (s.length - i) % 3 === 0) { const b = document.createElement("div"); b.className = "d blank"; wrap.appendChild(b); }
-    const d = document.createElement("div"); d.className = "d";
+    const r = s.length - 1 - i;  // rang en partant des unités
+    const d = document.createElement("div"); d.className = "drum" + (r === 0 ? " last" : "");
     const reel = document.createElement("div"); reel.className = "reel";
-    reel.innerHTML = Array.from({ length: 10 }, (_, n) => `<span>${n}</span>`).join("") + (ch === "-" ? "<span>–</span>" : "");
-    d.appendChild(reel); wrap.appendChild(d);
-    const target = ch === "-" ? 10 : +ch;
-    reel.style.transitionDelay = (0.15 + i * 0.12) + "s";
-    onStart(() => reel.style.transform = `translateY(-${target * 100 / (ch === "-" ? 11 : 10)}%)`);
+    reel.style.setProperty("--j", (JITTER[r] || 0) + "px");
+    d.appendChild(reel); slot.appendChild(d);
+    if (ch === "-") { reel.innerHTML = "<span>–</span>"; return; }
+    // un 9 en tête pour qu'on devine le chiffre au-dessus du 0, puis 0 1 2… sur tous les tours, et un de plus dessous
+    const target = (TURNS[r] || 0) * 10 + +ch, n = target + 3;
+    reel.innerHTML = Array.from({ length: n }, (_, k) => `<span>${(k + 9) % 10}</span>`).join("");
+    const pos = k => `translateY(-${(k + 1) * 100 / n}%)`;  // k = chiffre affiché (0 = premier 0)
+    reel.dataset.start = pos(0);
+    reel.style.transform = pos(0);
+    reel.style.transition = `transform ${1.6 + (TURNS[r] || 0) * 0.35}s cubic-bezier(.25,.9,.3,1) ${0.1 + i * 0.08}s`;
+    onStart(() => reel.style.transform = pos(target));
   });
   if (km != null && P.constructionDate) {
     const months = Math.max(1, (fetched - new Date(P.constructionDate)) / (30.44 * 86400000));
@@ -1350,7 +1370,7 @@ function replayOverview() {
     [$("serviceArc"), "strokeDashoffset", "251"],
     [$("rangeBar"), "width", "0%"],
     ...[...document.querySelectorAll(".tire .mini i")].map(el => [el, "width", "0%"]),
-    ...[...document.querySelectorAll("#odo .reel")].map(el => [el, "transform", "translateY(0)"]),
+    ...[...document.querySelectorAll("#odo .reel")].map(el => [el, "transform", el.dataset.start || "translateY(0)"]),
   ].filter(([el, prop]) => el && el.style[prop]);
   // 1. on revient à l'état de départ, sans transition
   const finals = moves.map(([el, prop, start]) => {

@@ -7,7 +7,7 @@ Aucune donnée personnelle : VIN factice, position publique (BMW Welt, Munich), 
 sur 60 jours. Seule la photo du véhicule (voiture.png, si elle existe) est reprise telle quelle.
 Le dossier demo/ est ignoré par Git.
 """
-import functools, http.server, json, random, shutil, subprocess, sys, threading
+import functools, http.server, json, random, shutil, subprocess, sys, threading, time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -21,6 +21,14 @@ EDGE = [Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
 
 sys.path.insert(0, str(PROJ))
 import bmw_cardata as b  # noqa: E402
+
+
+def wait_for(cond, timeout):
+    """Attend que cond() soit vraie, au plus timeout secondes ; renvoie son dernier résultat."""
+    end = time.monotonic() + timeout
+    while not cond() and time.monotonic() < end:
+        time.sleep(0.25)
+    return cond()
 
 
 def build_page():
@@ -184,14 +192,22 @@ def capture(page):
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{server.server_port}/{page.name}"
+    profile = OUT / "edge-profil"
     for tab, height in SHOTS.items():
+        shot = CAPTURES / f"{tab}.png"
+        shot.unlink(missing_ok=True)
         # profil Edge dédié : sans lui, Edge déjà ouvert ignore la demande et aucun fichier n'est écrit
         subprocess.run([str(edge), "--headless=new", "--disable-gpu", "--hide-scrollbars",
                         "--force-device-scale-factor=1", f"--window-size=1440,{height}",
-                        "--virtual-time-budget=5000", f"--user-data-dir={OUT / 'edge-profil'}",
-                        f"--screenshot={CAPTURES / (tab + '.png')}", f"{url}?still#{tab}"],
+                        "--virtual-time-budget=5000", f"--user-data-dir={profile}",
+                        f"--screenshot={shot}", f"{url}?still#{tab}"],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print("Capture :", (CAPTURES / f"{tab}.png").relative_to(PROJ))
+        # Edge peut rendre la main avant d'avoir fini (constaté le 21/11/2026) : on attend l'image,
+        # puis la fermeture du navigateur (verrou du profil), sinon la capture suivante est ignorée.
+        if not wait_for(shot.exists, 60):
+            sys.exit(f"Edge n'a pas écrit {shot.name} (profil {profile.name} encore occupé ?).")
+        wait_for(lambda: not (profile / "lockfile").exists(), 30)
+        print("Capture :", shot.relative_to(PROJ))
     server.shutdown()
     print("Capture mobile (mobile.jpg, 750 × 1624) : à faire à la main dans un navigateur à 375 px de large,\n"
           "Edge en mode headless ne descend pas sous ~500 px.")
