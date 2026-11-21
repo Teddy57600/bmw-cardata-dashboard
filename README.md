@@ -272,6 +272,7 @@ Pour que le tableau de bord tourne jour et nuit sans laisser le PC allumé, `str
 - L'image ne contient que le code : le [`.dockerignore`](.dockerignore) fonctionne en liste blanche.
 - Les données personnelles (configuration, jetons, base de l'historique, photo) sont dans le dossier `data/`, monté sur `/data`. Elles ne sont lisibles que par l'utilisateur du conteneur.
 - Le conteneur redémarre tout seul et signale son état à Docker (contrôle de santé sur `/live.json`).
+- Tout ce que `stream` affiche est aussi écrit, daté, dans `data/journal_flux.log`. Ce journal reste après une mise à jour, alors que `docker logs` est vidé à chaque recréation du conteneur. Il tourne par taille : 4 fichiers de 5 Mo au plus (`journal_flux.log`, puis `.1` à `.3`, du plus récent au plus ancien). Pour le suivre : `tail -f data/journal_flux.log`.
 
 **Sur la machine qui a Docker**, dans le dossier du projet :
 
@@ -434,6 +435,7 @@ Les fichiers personnels sont exclus du dépôt par le [`.gitignore`](.gitignore)
 | `derniere_lecture.json` | Dernières données connues, dont la position GPS |
 | `historique.db` | Base SQLite de toutes les valeurs reçues, dont les positions GPS successives |
 | `historique_stream.jsonl` | Journal brut des messages reçus en direct |
+| `journal_flux.log` (et `.1` à `.3`) | Messages affichés par `stream`, datés : connexions, jetons renouvelés, valeurs reçues |
 | `historique_lectures.jsonl` | Ancien journal des lectures `status`, repris dans la base s'il existe |
 | `profil_vehicule.json`, `voiture.png` | Fiche et photo du véhicule |
 | `tableau_de_bord.html` | Page générée (contient le VIN et la position) |

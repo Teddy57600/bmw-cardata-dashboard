@@ -8,6 +8,7 @@ derniere_lecture.json
 historique_stream.jsonl
 historique_lectures.jsonl
 historique.db*
+journal_flux.log*
 # fiche et photo officielle du véhicule
 profil_vehicule.json
 voiture.png

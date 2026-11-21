@@ -72,6 +72,9 @@ STREAM_LOG_IN_PAGE = 800                       # nombre de messages repris dans 
 HISTORY_DB = DATA / "historique.db"            # base SQLite : toutes les valeurs datées (streaming + status)
 API_LOG = DATA / "historique_lectures.jsonl"   # ancien journal des lectures « status », importé dans la base
 HISTORY_MAX_POINTS = 1500                      # points gardés par courbe dans la page
+STREAM_JOURNAL = DATA / "journal_flux.log"     # messages de « stream », datés (survit aux redémarrages)
+STREAM_JOURNAL_MAX = 5 * 1024 * 1024           # taille d'un fichier du journal avant rotation
+STREAM_JOURNAL_KEEP = 3                        # anciens fichiers gardés : journal_flux.log.1 à .3
 
 # Données suivies dans le temps (onglet « Historique »)
 HISTORY_KEYS = [
@@ -1321,7 +1324,56 @@ def start_live_server():
     return None
 
 
+class _Journal:
+    """Recopie ce que le script affiche dans journal_flux.log, chaque ligne précédée de sa date.
+
+    Le journal de Docker est vidé à chaque recréation du conteneur ; ce fichier, lui, reste dans
+    le dossier des données. Rotation par taille : journal_flux.log.1 à .N (le plus ancien est effacé).
+    """
+    _lock = threading.Lock()
+
+    def __init__(self, stream, path=STREAM_JOURNAL):
+        # print() envoie le texte puis le retour à la ligne : un tampon par fil d'exécution évite
+        # de mélanger les morceaux de deux messages affichés en même temps.
+        self.stream, self.path, self.local = stream, path, threading.local()
+
+    def write(self, text):
+        n = self.stream.write(text)
+        *lines, self.local.pending = (getattr(self.local, "pending", "") + text).split("\n")
+        if lines:
+            with self._lock:
+                stamp = f"{datetime.now():%Y-%m-%d %H:%M:%S}"
+                try:
+                    self._rotate()
+                    with open(self.path, "a", encoding="utf-8") as f:
+                        f.writelines(f"{stamp}  {line}\n" for line in lines)
+                except OSError:
+                    pass  # le journal ne doit jamais arrêter le flux
+        return n
+
+    def _rotate(self):
+        try:
+            if self.path.stat().st_size < STREAM_JOURNAL_MAX:
+                return
+        except FileNotFoundError:
+            return
+        for i in range(STREAM_JOURNAL_KEEP, 0, -1):
+            older = self.path.with_name(f"{self.path.name}.{i}")
+            newer = self.path.with_name(f"{self.path.name}.{i - 1}") if i > 1 else self.path
+            if newer.exists():
+                os.replace(newer, older)
+
+    def flush(self):
+        self.stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
 def stream():
+    if not isinstance(sys.stdout, _Journal):
+        sys.stdout, sys.stderr = _Journal(sys.stdout), _Journal(sys.stderr)
+        print(f"===== Démarrage de « stream » (journal : {STREAM_JOURNAL.name}) =====")
     try:
         import paho.mqtt.client as mqtt
         from paho.mqtt.enums import CallbackAPIVersion
