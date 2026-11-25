@@ -183,6 +183,7 @@ body {
 .trip[aria-selected="true"] { background: rgba(61,139,255,.12); border-color: rgba(61,139,255,.45); }
 .trip .km { font-weight: 600; }
 .trip .sub { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.trip .stay { white-space: nowrap; color: #b4bcc8; }
 .trip-end { width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; border: 3px solid #fff; }
 .trip-end.a { background: var(--ok); } .trip-end.b { background: var(--bad); }
 .trips-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
@@ -1766,6 +1767,15 @@ function fluxValue(k, e) {
   const hour = d => d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const dur = (a, b) => { const m = Math.max(1, Math.round((b - a) / 60000)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`; };
   trips.forEach(t => { t.a = new Date(t.start); t.b = new Date(t.end); });
+  /* temps passé à destination : jusqu'au départ du trajet suivant, ou jusqu'à maintenant pour le dernier.
+     Les arrêts courts (moins de 15 min) ne sont pas affichés. */
+  const STAY_MIN = 15;
+  const stayFmt = m => m < 60 ? `${m} min` : m < 1440 ? `${Math.floor(m / 60)} h${m % 60 ? " " + String(m % 60).padStart(2, "0") : ""}`
+    : `${Math.floor(m / 1440)} j${Math.floor(m % 1440 / 60) ? " " + Math.floor(m % 1440 / 60) + " h" : ""}`;
+  trips.forEach((t, i) => {
+    const m = Math.round(((i ? trips[i - 1].a : new Date()) - t.b) / 60000);
+    t.stay = m >= STAY_MIN ? (i ? `${stayFmt(m)} sur place` : `garée depuis ${stayFmt(m)}`) : "";
+  });
   /* carburant du trajet : baisse du niveau du réservoir, connu au % près (≈ 0,5 L pour 49 L).
      Litres arrondis au demi-litre ; L/100 km seulement à partir de 20 km, sinon la marge est trop grande. */
   const tank = DATA.tankLiters;
@@ -1789,7 +1799,7 @@ function fluxValue(k, e) {
   trips.forEach((t, i) => {
     const d = t.a.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
     if (d !== day) { html += `<div class="trip-day">${esc(d)}</div>`; day = d; }
-    html += `<button type="button" class="trip" role="option" data-i="${i}" aria-selected="false"><span>${hour(t.a)} → ${hour(t.b)}</span><span class="km">${fmt(t.km)} km</span><span class="sub">${dur(t.a, t.b)}${fuelText(t)}</span></button>`;
+    html += `<button type="button" class="trip" role="option" data-i="${i}" aria-selected="false"><span>${hour(t.a)} → ${hour(t.b)}</span><span class="km">${fmt(t.km)} km</span><span class="sub">${dur(t.a, t.b)}${fuelText(t)}${t.stay ? ` · <span class="stay">${t.stay}</span>` : ""}</span></button>`;
   });
   list.innerHTML = html;
 
@@ -1813,7 +1823,7 @@ function fluxValue(k, e) {
       const p = trips[i].pts;
       ends = L.layerGroup([
         L.marker(p[0], { icon: L.divIcon({ className: "trip-end a", iconSize: [14, 14] }), title: `Départ ${hour(trips[i].a)}`, keyboard: false }),
-        L.marker(p[p.length - 1], { icon: L.divIcon({ className: "trip-end b", iconSize: [14, 14] }), title: `Arrivée ${hour(trips[i].b)}`, keyboard: false }),
+        L.marker(p[p.length - 1], { icon: L.divIcon({ className: "trip-end b", iconSize: [14, 14] }), title: `Arrivée ${hour(trips[i].b)}${trips[i].stay ? " · " + trips[i].stay : ""}`, keyboard: false }),
       ]).addTo(map);
     }
     fit();
