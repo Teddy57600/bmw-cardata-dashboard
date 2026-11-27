@@ -176,7 +176,9 @@ body {
 .trips-map { min-height: 620px; border-radius: 12px; overflow: hidden; }
 .trips-map::after { display: none; }
 .trips-map .leaflet-top.leaflet-right { top: 0; transform: none; }
-.trip-day { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; margin: 14px 0 4px; }
+.trip-day { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; margin: 14px 0 4px;
+  display: flex; justify-content: space-between; gap: 10px; padding-right: 11px; }  /* total du jour aligné sur les km des trajets */
+.trip-day .day-km { text-transform: none; letter-spacing: .04em; font-size: 12px; }
 .trip { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; width: 100%; text-align: left; padding: 9px 10px; margin: 2px 0;
   border: 1px solid transparent; border-radius: 10px; background: none; color: var(--text); font: inherit; font-size: 13.5px; cursor: pointer; }
 .trip:hover { background: rgba(255,255,255,.04); }
@@ -1796,9 +1798,13 @@ function fluxValue(k, e) {
   const first = trips[trips.length - 1].a;
   $("tripsHint").textContent = `${fmt(trips.length)} trajet${trips.length > 1 ? "s" : ""} · ${fmt(total)} km depuis le ${first.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}. Tracé approximatif : la voiture envoie sa position environ toutes les 3 minutes.`;
   let html = `<button type="button" class="trip" role="option" data-i="-1" aria-selected="true"><span>Tous les trajets</span><span class="km">${fmt(total)} km</span></button>`, day = "";
+  // jour de chaque trajet (jour du départ) et kilomètres parcourus ce jour-là
+  const dayOf = t => t.a.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  const dayKm = {};
+  trips.forEach(t => dayKm[dayOf(t)] = (dayKm[dayOf(t)] || 0) + (t.km || 0));
   trips.forEach((t, i) => {
-    const d = t.a.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
-    if (d !== day) { html += `<div class="trip-day">${esc(d)}</div>`; day = d; }
+    const d = dayOf(t);
+    if (d !== day) { html += `<div class="trip-day"><span>${esc(d)}</span><span class="day-km" title="Kilomètres parcourus ce jour-là">${fmt(dayKm[d])} km</span></div>`; day = d; }
     html += `<button type="button" class="trip" role="option" data-i="${i}" aria-selected="false"><span>${hour(t.a)} → ${hour(t.b)}</span><span class="km">${fmt(t.km)} km</span><span class="sub">${dur(t.a, t.b)}${fuelText(t)}${t.stay ? ` · <span class="stay">${t.stay}</span>` : ""}</span></button>`;
   });
   list.innerHTML = html;
